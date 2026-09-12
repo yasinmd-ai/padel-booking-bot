@@ -2,8 +2,10 @@ name: Daily Padel Court Booking
 
 on:
   schedule:
-    - cron: '0 20 * * *'  # Runs daily at 12:00 AM GST (Dubai Time)
-  workflow_dispatch:      # Enables manual trigger button
+    # 7:58 PM UTC = 11:58 PM GST (Dubai Time)
+    # Starts 2 minutes early to log in and prepare
+    - cron: '58 19 * * *'
+  workflow_dispatch:
 
 jobs:
   book:

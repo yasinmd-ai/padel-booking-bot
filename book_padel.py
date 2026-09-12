@@ -10,7 +10,6 @@ PASSWORD = os.getenv("DAMAC_PASSWORD")
 async def wait_until_midnight():
     """Holds execution until exactly 12:00:00 AM GST."""
     now = datetime.now()
-    # Target 12:00:00 AM tonight / tomorrow morning
     target = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if now >= target:
@@ -18,7 +17,6 @@ async def wait_until_midnight():
 
     wait_seconds = (target - datetime.now()).total_seconds()
 
-    # Safety buffer: if launched right around midnight, proceed immediately
     if wait_seconds > 300:
         print("Manual run or outside release window — proceeding immediately.")
         return

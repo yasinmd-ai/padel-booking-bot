@@ -39,7 +39,7 @@ async def main():
 
         print("Navigating to Damac Living...")
         try:
-            await page.goto("https://damacliving.com", wait_until="networkidle", timeout=30000)
+            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             print(f"Navigation failed: {e}")
             await browser.close()
@@ -54,7 +54,7 @@ async def main():
 
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            await page.wait_for_load_state("domcontentloaded", timeout=15000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
@@ -63,9 +63,9 @@ async def main():
 
         # 2. Select Court
         try:
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(4000)
             
-            # Step A: Click "Book Amenity" from side/dashboard navigation
+            # Step A: Click "Book Amenity"
             print("Clicking Book Amenity section...")
             book_amenity_elem = page.locator("a[href*='book-amenity']").first
             
@@ -75,9 +75,7 @@ async def main():
             await book_amenity_elem.wait_for(state="visible", timeout=15000)
             await book_amenity_elem.click(force=True)
 
-            # Wait for amenity list page to load completely
-            await page.wait_for_load_state("networkidle", timeout=15000)
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(4000)
 
             # Step B: Click New booking button
             print("Clicking New booking...")
@@ -123,7 +121,6 @@ async def main():
             
             print("Clicked proceed to booking. Waiting 3 seconds for full page load...")
             await asyncio.sleep(3)
-            await page.wait_for_load_state("networkidle", timeout=10000)
 
             # Select Date
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")

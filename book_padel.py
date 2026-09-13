@@ -33,7 +33,7 @@ async def main():
             await browser.close()
             return
 
-       # 2. Select Court and Stop
+      # 2. Select Court and Stop
         try:
             await page.wait_for_timeout(5000)
             
@@ -41,11 +41,13 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # Wait 5 full seconds for the dashboard to transition and render the buttons
-            print("Waiting for dashboard view to load...")
-            await page.wait_for_timeout(5000)
+            # CRITICAL: Wait for the page network to finish loading the dashboard data
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except:
+                pass  # Fallback if networkidle takes too long
 
-            # Use a flexible text locator for the new booking button
+            # Now find the "New booking" button using a robust filter
             new_booking_btn = page.locator("a.button, button").filter(has_text="New booking").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)

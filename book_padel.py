@@ -1,13 +1,35 @@
 import asyncio
 import os
-import re  # <-- Make sure import re is included at the top
+import re
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
-# ... (keep wait_until_midnight function as is) ...
+
+async def wait_until_midnight():
+    """Holds execution until exactly 12:00:00 AM GST."""
+    now = datetime.now()
+    target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if now >= target:
+        target += timedelta(days=1)
+
+    wait_seconds = (target - datetime.now()).total_seconds()
+
+    if wait_seconds > 300:
+        print("Manual run or outside release window — proceeding immediately.")
+        return
+
+    print(
+        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s for midnight drop..."
+    )
+    if wait_seconds > 0:
+        await asyncio.sleep(wait_seconds)
+
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight hit! Scraping date...")
+
 
 async def main():
     async with async_playwright() as p:
@@ -16,7 +38,12 @@ async def main():
         page = await context.new_page()
 
         print("Navigating to Damac Living...")
-        await page.goto("https://damacliving.com", wait_until="domcontentloaded")
+        try:
+            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            print(f"Navigation failed: {e}")
+            await browser.close()
+            return
 
         # 1. Login
         try:
@@ -33,7 +60,7 @@ async def main():
             await browser.close()
             return
 
-      # 2. Select Court and Stop
+        # 2. Select Court and Stop
         try:
             await page.wait_for_timeout(5000)
             
@@ -41,14 +68,16 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # CRITICAL: Wait for the page network to finish loading the dashboard data
+            # Wait for network idle to ensure dashboard elements are fetched and rendered
             try:
                 await page.wait_for_load_state("networkidle", timeout=15000)
             except:
-                pass  # Fallback if networkidle takes too long
+                pass
 
-            # Now find the "New booking" button using a robust filter
-            new_booking_btn = page.locator("a.button, button").filter(has_text="New booking").first
+            await page.wait_for_timeout(2000)
+
+            # Target the exact "New booking" button based on HTML structure
+            new_booking_btn = page.locator("a.button.button__primary").filter(has_text="New booking").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 
@@ -69,9 +98,14 @@ async def main():
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
+            try:
+                await page.screenshot(path="error_screenshot.png", full_page=True)
+                print("Saved error_screenshot.png for debugging.")
+            except Exception as img_err:
+                print(f"Could not save screenshot: {img_err}")
             await browser.close()
             return
-            
+
         # 3. Precision Hold until 12:00:00 AM
         await wait_until_midnight()
 
@@ -82,7 +116,6 @@ async def main():
             await proceed_btn.click()
             print("Clicked proceed to booking. Waiting for 3-second page load...")
 
-            # Explicitly wait for the post-click page transition
             await page.wait_for_load_state("networkidle", timeout=10000)
             await page.wait_for_timeout(3000)
 
@@ -131,6 +164,11 @@ async def main():
 
         except Exception as e:
             print(f"Midnight booking attempt failed: {e}")
+            try:
+                await page.screenshot(path="midnight_error_screenshot.png", full_page=True)
+                print("Saved midnight_error_screenshot.png for debugging.")
+            except:
+                pass
 
         await asyncio.sleep(5)
         await browser.close()

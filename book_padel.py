@@ -54,7 +54,7 @@ async def main():
             await browser.close()
             return
 
-        # 2. Select Court and Stop
+       # 2. Select Court and Stop
         try:
             await page.wait_for_timeout(5000)
             
@@ -62,9 +62,10 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            new_booking_btn = page.locator("a:has-text('New booking'), button:has-text('New booking')").first
+            # Use generic text search for 'New booking'
+            new_booking_btn = page.get_by_text("New booking", exact=False).first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
-            await new_booking_btn.click()
+            await new_booking_btn.click(force=True)
 
             await page.wait_for_selector(".modal-body", timeout=15000)
             await page.wait_for_timeout(1000)

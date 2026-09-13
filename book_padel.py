@@ -6,7 +6,6 @@ from playwright.async_api import async_playwright
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
-# Unit-specific amenity page URL from DevTools route
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
 
@@ -57,7 +56,6 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
             
-            # Wait for login to complete and dashboard to load
             await page.wait_for_selector("a:has-text('Book Amenity'), div:has-text('Book Amenity')", timeout=15000)
             print("Logged in successfully.")
         except Exception as e:
@@ -65,13 +63,11 @@ async def main():
             await browser.close()
             return
 
-        # 2. Client-Side SPA Navigation to Amenity Page
+        # 2. SPA Navigation & Court Selection
         try:
             print("Navigating to Amenity Page via SPA router...")
-            # Use JS pushState to trigger Next.js client-side navigation without breaking session state
             await page.evaluate(f"window.location.href = '{DIRECT_AMENITY_URL}'")
             
-            # Target exact element found in DevTools DOM dump
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=15000)
             print("Successfully reached Amenity page! Clicking New booking...")
@@ -94,17 +90,10 @@ async def main():
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
-            try:
-                page_text = await page.inner_text("body")
-                print("--- PAGE TEXT DUMP ---")
-                print(page_text[:1500])
-                print("----------------------")
-            except Exception as dump_err:
-                print(f"Could not dump page text: {dump_err}")
             await browser.close()
             return
 
-        # 3. Hold execution until 12:00:00 AM GST
+        # 3. Hold execution until midnight GST
         await wait_until_midnight()
 
         # 4. Rapid Execution at 12:00:00 AM GST
@@ -121,7 +110,7 @@ async def main():
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
 
-            date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
+            date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
             date_count = await date_items.count()
             
             if date_count > 0:
@@ -132,24 +121,24 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot
+            # Select Time Slot (Targeting 06:00 PM - 07:00 PM for test run)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
             target_time = page.locator(
-                "a.dropdown-item[data-rr-ui-dropdown-item]:has-text('07:00 PM - 08:00 PM')"
+                "a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('06:00 PM')"
             )
             if await target_time.count() > 0:
-                print("Selecting slot: 07:00 PM - 08:00 PM...")
-                await target_time.click()
+                print("Selecting slot: 06:00 PM - 07:00 PM...")
+                await target_time.first.click()
             else:
-                print("Selecting first available slot for trial run...")
-                time_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
-                if await time_items.count() > 0:
-                    selected_slot = await time_items.nth(0).text_content()
-                    print(f"Selecting slot: {selected_slot.strip()}")
-                    await time_items.nth(0).click()
+                visible_slots = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible:not(.search-box)")
+                slot_count = await visible_slots.count()
+                if slot_count > 0:
+                    selected_slot = await visible_slots.nth(0).text_content()
+                    print(f"Selecting fallback slot: {selected_slot.strip()}")
+                    await visible_slots.nth(0).click()
 
             await page.wait_for_timeout(500)
 

@@ -41,15 +41,7 @@ async def main():
         try:
             await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
-            print(f"Pre-booking setup failed: {e}")
-            try:
-                # Print all the text currently visible on the page to the logs
-                page_text = await page.inner_text("body")
-                print("--- PAGE TEXT DUMP ---")
-                print(page_text[:1000]) # Prints the first 1000 characters of the page
-                print("----------------------")
-            except Exception as dump_err:
-                print(f"Could not dump page text: {dump_err}")
+            print(f"Navigation failed: {e}")
             await browser.close()
             return
 
@@ -76,7 +68,6 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # Wait for network idle to ensure dashboard elements are fetched and rendered
             try:
                 await page.wait_for_load_state("networkidle", timeout=15000)
             except:
@@ -84,8 +75,8 @@ async def main():
 
             await page.wait_for_timeout(2000)
 
-            # Target the exact "New booking" button based on HTML structure
-            new_booking_btn = page.locator("a.button.button__primary").filter(has_text="New booking").first
+            # Use Playwright's native role finder for the "New booking" link
+            new_booking_btn = page.get_by_role("link", name="New booking").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 
@@ -107,10 +98,12 @@ async def main():
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
             try:
-                await page.screenshot(path="error_screenshot.png", full_page=True)
-                print("Saved error_screenshot.png for debugging.")
-            except Exception as img_err:
-                print(f"Could not save screenshot: {img_err}")
+                page_text = await page.inner_text("body")
+                print("--- PAGE TEXT DUMP ---")
+                print(page_text[:1500])
+                print("----------------------")
+            except Exception as dump_err:
+                print(f"Could not dump page text: {dump_err}")
             await browser.close()
             return
 
@@ -172,11 +165,6 @@ async def main():
 
         except Exception as e:
             print(f"Midnight booking attempt failed: {e}")
-            try:
-                await page.screenshot(path="midnight_error_screenshot.png", full_page=True)
-                print("Saved midnight_error_screenshot.png for debugging.")
-            except:
-                pass
 
         await asyncio.sleep(5)
         await browser.close()

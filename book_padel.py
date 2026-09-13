@@ -41,7 +41,15 @@ async def main():
         try:
             await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
-            print(f"Navigation failed: {e}")
+            print(f"Pre-booking setup failed: {e}")
+            try:
+                # Print all the text currently visible on the page to the logs
+                page_text = await page.inner_text("body")
+                print("--- PAGE TEXT DUMP ---")
+                print(page_text[:1000]) # Prints the first 1000 characters of the page
+                print("----------------------")
+            except Exception as dump_err:
+                print(f"Could not dump page text: {dump_err}")
             await browser.close()
             return
 

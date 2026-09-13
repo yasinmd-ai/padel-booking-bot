@@ -57,26 +57,31 @@ async def main():
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
+            await page.screenshot(path="error_login.png")
             await browser.close()
             return
 
-        # 2. Select Court and Stop
+        # 2. Select Court
         try:
             await page.wait_for_timeout(5000)
             
-            # Step A: Click the main "Book Amenity" section on dashboard
+            # Step A: Navigate/Click Book Amenity
             print("Clicking Book Amenity section...")
-            book_amenity_card = page.locator("text=/Book Amenity/i").first
-            await book_amenity_card.wait_for(state="visible", timeout=20000)
-            await book_amenity_card.click(force=True)
+            
+            # Try clicking the specific Book Amenity card or link target
+            book_amenity_link = page.locator("a:has-text('Book Amenity'), div:has-text('Book Amenity')").last
+            if await book_amenity_link.is_visible():
+                await book_amenity_link.click(force=True)
+            else:
+                print("Direct card click not visible, navigating directly to amenities...")
+                await page.goto("https://damacliving.com/amenity-booking", wait_until="domcontentloaded")
 
-            # Wait for dashboard view to settle
             await page.wait_for_timeout(4000)
 
-            # Step B: Click "New booking"
+            # Step B: Click New booking
             print("Clicking New booking...")
-            new_booking_btn = page.locator("text=/New booking/i").first
-            await new_booking_btn.wait_for(state="visible", timeout=20000)
+            new_booking_btn = page.locator("button:has-text('New booking'), a:has-text('New booking'), div:has-text('New booking')").first
+            await new_booking_btn.wait_for(state="visible", timeout=15000)
             await new_booking_btn.click(force=True)
 
             await page.wait_for_selector(".modal-body", timeout=15000)
@@ -96,6 +101,7 @@ async def main():
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
+            await page.screenshot(path="error_setup.png")
             try:
                 page_text = await page.inner_text("body")
                 print("--- PAGE TEXT DUMP ---")
@@ -106,21 +112,20 @@ async def main():
             await browser.close()
             return
 
-        # 3. Precision Hold until 12:00:00 AM
+        # 3. Hold until Midnight
         await wait_until_midnight()
 
-        # 4. Instant Execution at 12:00:00 AM
+        # 4. Instant Execution at Midnight
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
             
-            # Allow full 3-second page loading transition
             print("Clicked proceed to booking. Waiting 3 seconds for full page load...")
             await asyncio.sleep(3)
             await page.wait_for_load_state("networkidle", timeout=10000)
 
-            # Select Newly Unlocked Date
+            # Select Date
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
@@ -140,7 +145,7 @@ async def main():
 
             await page.wait_for_timeout(2000)
 
-            # Select Time Slot (07:00 PM - 08:00 PM preferred)
+            # Select Time Slot
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -152,7 +157,7 @@ async def main():
                 print("Selecting 07:00 PM - 08:00 PM...")
                 await target_time.click()
             else:
-                print("Preferred slot unavailable or already booked. Selecting alternative available slot...")
+                print("Preferred slot unavailable or already booked. Selecting alternative slot...")
                 time_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
                 time_count = await time_items.count()
                 if time_count > 0:
@@ -177,6 +182,7 @@ async def main():
 
         except Exception as e:
             print(f"Booking attempt encountered an issue: {e}")
+            await page.screenshot(path="error_midnight.png")
 
         await asyncio.sleep(5)
         await browser.close()

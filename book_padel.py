@@ -122,16 +122,16 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting 06:00 PM - 07:00 PM)
+            # Select Time Slot (Targeting 07:00 PM - 08:00 PM)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
             target_time = page.locator(
-                "a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('06:00 PM')"
+                "a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('07:00 PM')"
             )
             if await target_time.count() > 0:
-                print("Selecting slot: 06:00 PM - 07:00 PM...")
+                print("Selecting slot: 07:00 PM - 08:00 PM...")
                 await target_time.first.click()
             else:
                 visible_slots = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible:not(.search-box)")

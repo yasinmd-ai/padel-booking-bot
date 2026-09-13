@@ -41,8 +41,11 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # Target the exact <a> tag with classes button and button__primary containing "New booking"
-            new_booking_btn = page.locator("a.button.button__primary:has-text('New booking')").first
+            # Give the dashboard a moment to load after clicking the amenity card
+            await page.wait_for_timeout(3000)
+
+            # Directly target the "New booking" text inside the primary button
+            new_booking_btn = page.get_by_text("New booking", exact=True).first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 

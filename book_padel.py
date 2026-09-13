@@ -1,34 +1,13 @@
 import asyncio
 import os
+import re  # <-- Make sure import re is included at the top
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
-
-async def wait_until_midnight():
-    """Holds execution until exactly 12:00:00 AM GST."""
-    now = datetime.now()
-    target = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    if now >= target:
-        target += timedelta(days=1)
-
-    wait_seconds = (target - datetime.now()).total_seconds()
-
-    if wait_seconds > 300:
-        print("Manual run or outside release window — proceeding immediately.")
-        return
-
-    print(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s for midnight drop..."
-    )
-    if wait_seconds > 0:
-        await asyncio.sleep(wait_seconds)
-
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight hit! Scraping date...")
-
+# ... (keep wait_until_midnight function as is) ...
 
 async def main():
     async with async_playwright() as p:
@@ -54,7 +33,7 @@ async def main():
             await browser.close()
             return
 
-       # 2. Select Court and Stop
+        # 2. Select Court and Stop
         try:
             await page.wait_for_timeout(5000)
             
@@ -62,8 +41,11 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # Use generic text search for 'New booking'
-            new_booking_btn = page.get_by_text("New booking", exact=False).first
+            # Give the dashboard a few seconds to load the next view after clicking the amenity
+            await page.wait_for_timeout(3000)
+
+            # Use a case-insensitive regex to find "New booking" / "New Booking" safely
+            new_booking_btn = page.get_by_text(re.compile("new booking", re.IGNORECASE)).first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 

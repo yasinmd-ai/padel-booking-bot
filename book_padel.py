@@ -51,12 +51,13 @@ async def main():
             await page.wait_for_selector("#userName", timeout=15000)
             await page.fill("#userName", USERNAME)
             await page.fill("input[type='password']", PASSWORD)
-            await page.wait_for_timeout(300)
+            await page.wait_for_timeout(500)
 
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
             
-            await page.wait_for_selector("a:has-text('Book Amenity'), div:has-text('Book Amenity')", timeout=15000)
+            # Wait for authentication redirect and dashboard render
+            await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")

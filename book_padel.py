@@ -7,9 +7,6 @@ from playwright.async_api import async_playwright
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
-# Direct amenity page URL for your unit
-DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
-
 
 async def wait_until_midnight():
     """Holds execution until exactly 12:00:00 AM GST."""
@@ -42,7 +39,7 @@ async def main():
 
         print("Navigating to Damac Living...")
         try:
-            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
+            await page.goto("https://damacliving.com", wait_until="networkidle", timeout=30000)
         except Exception as e:
             print(f"Navigation failed: {e}")
             await browser.close()
@@ -57,23 +54,35 @@ async def main():
 
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
+            await page.wait_for_load_state("networkidle", timeout=15000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
             return
 
-        # 2. Direct Navigation to Amenity Page
+        # 2. Select Court
         try:
             await page.wait_for_timeout(3000)
-            print("Navigating directly to unit amenity page...")
-            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)
+            
+            # Step A: Click "Book Amenity" from side/dashboard navigation
+            print("Clicking Book Amenity section...")
+            book_amenity_elem = page.locator("a[href*='book-amenity']").first
+            
+            if await book_amenity_elem.count() == 0:
+                book_amenity_elem = page.get_by_text("Book Amenity").first
 
-            # Step B: Click New booking
+            await book_amenity_elem.wait_for(state="visible", timeout=15000)
+            await book_amenity_elem.click(force=True)
+
+            # Wait for amenity list page to load completely
+            await page.wait_for_load_state("networkidle", timeout=15000)
+            await page.wait_for_timeout(2000)
+
+            # Step B: Click New booking button
             print("Clicking New booking...")
-            new_booking_btn = page.locator("button:has-text('New booking'), a:has-text('New booking'), div:has-text('New booking')").first
-            await new_booking_btn.wait_for(state="visible", timeout=20000)
+            new_booking_btn = page.locator("button:has-text('New booking'), a:has-text('New booking')").first
+            await new_booking_btn.wait_for(state="visible", timeout=15000)
             await new_booking_btn.click(force=True)
 
             await page.wait_for_selector(".modal-body", timeout=15000)
@@ -93,7 +102,6 @@ async def main():
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
-            await page.screenshot(path="error_setup.png")
             try:
                 page_text = await page.inner_text("body")
                 print("--- PAGE TEXT DUMP ---")
@@ -104,10 +112,10 @@ async def main():
             await browser.close()
             return
 
-        # 3. Precision Hold until 12:00:00 AM
+        # 3. Precision Hold until Midnight
         await wait_until_midnight()
 
-        # 4. Instant Execution at 12:00:00 AM
+        # 4. Instant Execution at Midnight
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)

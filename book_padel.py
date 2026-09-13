@@ -64,24 +64,20 @@ async def main():
         try:
             await page.wait_for_timeout(5000)
             
-            # Step A: Click the main "Book Amenity" section/card on the dashboard first
+            # Step A: Click the main "Book Amenity" card on the dashboard
             print("Clicking Book Amenity section...")
-            book_amenity_card = page.locator("a:has-text('Book Amenity'), #action-book-amenity, a.actionsitem__itemlink").first
+            book_amenity_card = page.get_by_text("Book Amenity", exact=True).first
             await book_amenity_card.wait_for(state="visible", timeout=20000)
-            await book_amenity_card.click(force=True)
+            await book_amenity_card.click()
 
-            try:
-                await page.wait_for_load_state("networkidle", timeout=15000)
-            except:
-                pass
-
-            await page.wait_for_timeout(3000)
+            # Wait for the view to update
+            await page.wait_for_timeout(4000)
 
             # Step B: Click the "New booking" link inside the amenity view
             print("Clicking New booking...")
-            new_booking_btn = page.get_by_role("link", name="New booking").first
+            new_booking_btn = page.get_by_text("New booking", exact=False).first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
-            await new_booking_btn.click(force=True)
+            await new_booking_btn.click()
 
             await page.wait_for_selector(".modal-body", timeout=15000)
             await page.wait_for_timeout(1000)

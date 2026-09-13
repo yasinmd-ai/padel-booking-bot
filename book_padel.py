@@ -7,6 +7,9 @@ from playwright.async_api import async_playwright
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
+# Direct amenity page URL for your unit
+DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
+
 
 async def wait_until_midnight():
     """Holds execution until exactly 12:00:00 AM GST."""
@@ -57,31 +60,20 @@ async def main():
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
-            await page.screenshot(path="error_login.png")
             await browser.close()
             return
 
-        # 2. Select Court
+        # 2. Direct Navigation to Amenity Page
         try:
-            await page.wait_for_timeout(5000)
-            
-            # Step A: Navigate/Click Book Amenity
-            print("Clicking Book Amenity section...")
-            
-            # Try clicking the specific Book Amenity card or link target
-            book_amenity_link = page.locator("a:has-text('Book Amenity'), div:has-text('Book Amenity')").last
-            if await book_amenity_link.is_visible():
-                await book_amenity_link.click(force=True)
-            else:
-                print("Direct card click not visible, navigating directly to amenities...")
-                await page.goto("https://damacliving.com/amenity-booking", wait_until="domcontentloaded")
-
-            await page.wait_for_timeout(4000)
+            await page.wait_for_timeout(3000)
+            print("Navigating directly to unit amenity page...")
+            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
 
             # Step B: Click New booking
             print("Clicking New booking...")
             new_booking_btn = page.locator("button:has-text('New booking'), a:has-text('New booking'), div:has-text('New booking')").first
-            await new_booking_btn.wait_for(state="visible", timeout=15000)
+            await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 
             await page.wait_for_selector(".modal-body", timeout=15000)
@@ -97,7 +89,7 @@ async def main():
             await next_btn.wait_for(state="visible", timeout=15000)
             await next_btn.click()
 
-            print("Court selected successfully. Waiting at the pre-booking screen...")
+            print("Court selected successfully. Waiting at pre-booking screen...")
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}")
@@ -112,10 +104,10 @@ async def main():
             await browser.close()
             return
 
-        # 3. Hold until Midnight
+        # 3. Precision Hold until 12:00:00 AM
         await wait_until_midnight()
 
-        # 4. Instant Execution at Midnight
+        # 4. Instant Execution at 12:00:00 AM
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
@@ -136,16 +128,12 @@ async def main():
             if date_count > 0:
                 latest_date = date_items.nth(date_count - 1)
                 date_text = (await latest_date.text_content()).strip()
-                print(f"Latest available date in dropdown: '{date_text}'")
-                
-                if "27" in date_text and "Sep" in date_text:
-                    print("Notice: 27th September already has an active manual booking.")
-                
+                print(f"Selecting date: '{date_text}'")
                 await latest_date.click()
 
             await page.wait_for_timeout(2000)
 
-            # Select Time Slot
+            # Select Slot
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -154,14 +142,14 @@ async def main():
                 "a.dropdown-item[data-rr-ui-dropdown-item]:has-text('07:00 PM - 08:00 PM')"
             )
             if await target_time.count() > 0:
-                print("Selecting 07:00 PM - 08:00 PM...")
+                print("Selecting preferred slot: 07:00 PM - 08:00 PM...")
                 await target_time.click()
             else:
-                print("Preferred slot unavailable or already booked. Selecting alternative slot...")
+                print("Selecting first available slot...")
                 time_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
                 time_count = await time_items.count()
                 if time_count > 0:
-                    await time_items.nth(time_count - 1).click()
+                    await time_items.nth(0).click()
 
             await page.wait_for_timeout(1000)
 
@@ -173,16 +161,8 @@ async def main():
             await book_now_btn.click()
             print("Booking submitted successfully!")
 
-            await page.wait_for_timeout(3000)
-            body_text = await page.inner_text("body")
-            if "already have a booking" in body_text.lower():
-                print("Website Notice: You already have a booking for this date/time window.")
-            else:
-                print("Booking confirmed!")
-
         except Exception as e:
-            print(f"Booking attempt encountered an issue: {e}")
-            await page.screenshot(path="error_midnight.png")
+            print(f"Booking attempt failed: {e}")
 
         await asyncio.sleep(5)
         await browser.close()

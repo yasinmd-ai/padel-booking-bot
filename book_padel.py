@@ -33,7 +33,7 @@ async def main():
             await browser.close()
             return
 
-        # 2. Select Court and Stop
+       # 2. Select Court and Stop
         try:
             await page.wait_for_timeout(5000)
             
@@ -41,11 +41,8 @@ async def main():
             await amenity_link.wait_for(state="visible", timeout=20000)
             await amenity_link.click(force=True)
 
-            # Give the dashboard a few seconds to load the next view after clicking the amenity
-            await page.wait_for_timeout(3000)
-
-            # Use a case-insensitive regex to find "New booking" / "New Booking" safely
-            new_booking_btn = page.get_by_text(re.compile("new booking", re.IGNORECASE)).first
+            # Target the exact <a> tag with classes button and button__primary containing "New booking"
+            new_booking_btn = page.locator("a.button.button__primary:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)
 
@@ -68,7 +65,7 @@ async def main():
             print(f"Pre-booking setup failed: {e}")
             await browser.close()
             return
-
+            
         # 3. Precision Hold until 12:00:00 AM
         await wait_until_midnight()
 

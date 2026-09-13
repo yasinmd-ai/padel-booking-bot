@@ -64,18 +64,21 @@ async def main():
         try:
             await page.wait_for_timeout(5000)
             
-            amenity_link = page.locator("#action-book-amenity, a.actionsitem__itemlink").first
-            await amenity_link.wait_for(state="visible", timeout=20000)
-            await amenity_link.click(force=True)
+            # 1. Click the main "Book Amenity" section/card on the dashboard
+            print("Clicking Book Amenity section...")
+            book_amenity_card = page.locator("a:has-text('Book Amenity'), #action-book-amenity, a.actionsitem__itemlink").first
+            await book_amenity_card.wait_for(state="visible", timeout=20000)
+            await book_amenity_card.click(force=True)
 
             try:
                 await page.wait_for_load_state("networkidle", timeout=15000)
             except:
                 pass
 
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
 
-            # Use Playwright's native role finder for the "New booking" link
+            # 2. Click the "New booking" button inside the amenity view
+            print("Clicking New booking...")
             new_booking_btn = page.get_by_role("link", name="New booking").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
             await new_booking_btn.click(force=True)

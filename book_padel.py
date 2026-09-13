@@ -1,11 +1,13 @@
 import asyncio
 import os
-import re
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
+
+# Unit-specific amenity page URL from DevTools route
+DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
 
 async def wait_until_midnight():
@@ -39,7 +41,7 @@ async def main():
 
         print("Navigating to Damac Living...")
         try:
-            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
+            await page.goto("https://damacliving.com", wait_until="commit", timeout=30000)
         except Exception as e:
             print(f"Navigation failed: {e}")
             await browser.close()
@@ -50,41 +52,33 @@ async def main():
             await page.wait_for_selector("#userName", timeout=15000)
             await page.fill("#userName", USERNAME)
             await page.fill("input[type='password']", PASSWORD)
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(300)
 
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
-            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+            
+            # Wait for login to complete and dashboard to load
+            await page.wait_for_selector("a:has-text('Book Amenity'), div:has-text('Book Amenity')", timeout=15000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
             return
 
-        # 2. Select Court
+        # 2. Client-Side SPA Navigation to Amenity Page
         try:
-            await page.wait_for_timeout(4000)
+            print("Navigating to Amenity Page via SPA router...")
+            # Use JS pushState to trigger Next.js client-side navigation without breaking session state
+            await page.evaluate(f"window.location.href = '{DIRECT_AMENITY_URL}'")
             
-            # Step A: Click "Book Amenity"
-            print("Clicking Book Amenity section...")
-            book_amenity_elem = page.locator("a[href*='book-amenity']").first
-            
-            if await book_amenity_elem.count() == 0:
-                book_amenity_elem = page.get_by_text("Book Amenity").first
-
-            await book_amenity_elem.wait_for(state="visible", timeout=15000)
-            await book_amenity_elem.click(force=True)
-
-            await page.wait_for_timeout(4000)
-
-            # Step B: Click New booking button
-            print("Clicking New booking...")
-            new_booking_btn = page.locator("button:has-text('New booking'), a:has-text('New booking')").first
+            # Target exact element found in DevTools DOM dump
+            new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=15000)
-            await new_booking_btn.click(force=True)
+            print("Successfully reached Amenity page! Clicking New booking...")
+            await new_booking_btn.click()
 
             await page.wait_for_selector(".modal-body", timeout=15000)
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
 
             court_option = page.locator(".modal-body").get_by_text(
                 "D2 Sports Town - Paddle Court 1", exact=True
@@ -110,17 +104,17 @@ async def main():
             await browser.close()
             return
 
-        # 3. Precision Hold until Midnight
+        # 3. Hold execution until 12:00:00 AM GST
         await wait_until_midnight()
 
-        # 4. Instant Execution at Midnight
+        # 4. Rapid Execution at 12:00:00 AM GST
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
             
-            print("Clicked proceed to booking. Waiting 3 seconds for full page load...")
-            await asyncio.sleep(3)
+            print("Clicked proceed to booking. Loading slots...")
+            await asyncio.sleep(2)
 
             # Select Date
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
@@ -136,9 +130,9 @@ async def main():
                 print(f"Selecting date: '{date_text}'")
                 await latest_date.click()
 
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1000)
 
-            # Select Slot
+            # Select Time Slot
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -147,16 +141,17 @@ async def main():
                 "a.dropdown-item[data-rr-ui-dropdown-item]:has-text('07:00 PM - 08:00 PM')"
             )
             if await target_time.count() > 0:
-                print("Selecting preferred slot: 07:00 PM - 08:00 PM...")
+                print("Selecting slot: 07:00 PM - 08:00 PM...")
                 await target_time.click()
             else:
-                print("Selecting first available slot...")
+                print("Selecting first available slot for trial run...")
                 time_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
-                time_count = await time_items.count()
-                if time_count > 0:
+                if await time_items.count() > 0:
+                    selected_slot = await time_items.nth(0).text_content()
+                    print(f"Selecting slot: {selected_slot.strip()}")
                     await time_items.nth(0).click()
 
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
 
             # Confirm Booking
             book_now_btn = page.locator(

@@ -64,7 +64,7 @@ async def main():
         try:
             await page.wait_for_timeout(5000)
             
-            # 1. Click the main "Book Amenity" section/card on the dashboard
+            # Step A: Click the main "Book Amenity" section/card on the dashboard first
             print("Clicking Book Amenity section...")
             book_amenity_card = page.locator("a:has-text('Book Amenity'), #action-book-amenity, a.actionsitem__itemlink").first
             await book_amenity_card.wait_for(state="visible", timeout=20000)
@@ -77,7 +77,7 @@ async def main():
 
             await page.wait_for_timeout(3000)
 
-            # 2. Click the "New booking" button inside the amenity view
+            # Step B: Click the "New booking" link inside the amenity view
             print("Clicking New booking...")
             new_booking_btn = page.get_by_role("link", name="New booking").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)

@@ -64,20 +64,20 @@ async def main():
         try:
             await page.wait_for_timeout(5000)
             
-            # Step A: Click the main "Book Amenity" card on the dashboard
+            # Step A: Click the main "Book Amenity" section on dashboard
             print("Clicking Book Amenity section...")
-            book_amenity_card = page.get_by_text("Book Amenity", exact=True).first
+            book_amenity_card = page.locator("text=/Book Amenity/i").first
             await book_amenity_card.wait_for(state="visible", timeout=20000)
-            await book_amenity_card.click()
+            await book_amenity_card.click(force=True)
 
-            # Wait for the view to update
+            # Wait for dashboard view to settle
             await page.wait_for_timeout(4000)
 
-            # Step B: Click the "New booking" link inside the amenity view
+            # Step B: Click "New booking"
             print("Clicking New booking...")
-            new_booking_btn = page.get_by_text("New booking", exact=False).first
+            new_booking_btn = page.locator("text=/New booking/i").first
             await new_booking_btn.wait_for(state="visible", timeout=20000)
-            await new_booking_btn.click()
+            await new_booking_btn.click(force=True)
 
             await page.wait_for_selector(".modal-body", timeout=15000)
             await page.wait_for_timeout(1000)
@@ -114,10 +114,11 @@ async def main():
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
-            print("Clicked proceed to booking. Waiting for 3-second page load...")
-
+            
+            # Allow full 3-second page loading transition
+            print("Clicked proceed to booking. Waiting 3 seconds for full page load...")
+            await asyncio.sleep(3)
             await page.wait_for_load_state("networkidle", timeout=10000)
-            await page.wait_for_timeout(3000)
 
             # Select Newly Unlocked Date
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
@@ -126,15 +127,20 @@ async def main():
 
             date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
             date_count = await date_items.count()
+            
             if date_count > 0:
                 latest_date = date_items.nth(date_count - 1)
-                date_text = await latest_date.text_content()
-                print(f"Selecting newest date: {date_text.strip()}")
+                date_text = (await latest_date.text_content()).strip()
+                print(f"Latest available date in dropdown: '{date_text}'")
+                
+                if "27" in date_text and "Sep" in date_text:
+                    print("Notice: 27th September already has an active manual booking.")
+                
                 await latest_date.click()
 
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(2000)
 
-            # Select Time Slot (07:00 PM - 08:00 PM)
+            # Select Time Slot (07:00 PM - 08:00 PM preferred)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -146,7 +152,7 @@ async def main():
                 print("Selecting 07:00 PM - 08:00 PM...")
                 await target_time.click()
             else:
-                print("7-8 PM taken, selecting alternative slot...")
+                print("Preferred slot unavailable or already booked. Selecting alternative available slot...")
                 time_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
                 time_count = await time_items.count()
                 if time_count > 0:
@@ -160,10 +166,17 @@ async def main():
             )
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print("Booking completed successfully at midnight!")
+            print("Booking submitted successfully!")
+
+            await page.wait_for_timeout(3000)
+            body_text = await page.inner_text("body")
+            if "already have a booking" in body_text.lower():
+                print("Website Notice: You already have a booking for this date/time window.")
+            else:
+                print("Booking confirmed!")
 
         except Exception as e:
-            print(f"Midnight booking attempt failed: {e}")
+            print(f"Booking attempt encountered an issue: {e}")
 
         await asyncio.sleep(5)
         await browser.close()

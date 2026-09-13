@@ -56,18 +56,18 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
             
-            # Wait for authentication redirect and dashboard render
-            await page.wait_for_timeout(5000)
+            # Wait for auth response to complete
+            await page.wait_for_timeout(4000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
             return
 
-        # 2. SPA Navigation & Court Selection
+        # 2. Direct Navigation & Court Selection
         try:
-            print("Navigating to Amenity Page via SPA router...")
-            await page.evaluate(f"window.location.href = '{DIRECT_AMENITY_URL}'")
+            print("Navigating to Amenity Page...")
+            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
             
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=15000)
@@ -122,7 +122,7 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting 06:00 PM - 07:00 PM for test run)
+            # Select Time Slot (Targeting 06:00 PM - 07:00 PM)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -138,7 +138,7 @@ async def main():
                 slot_count = await visible_slots.count()
                 if slot_count > 0:
                     selected_slot = await visible_slots.nth(0).text_content()
-                    print(f"Selecting fallback slot: {selected_slot.strip()}")
+                    print(f"Fallback: Selecting slot '{selected_slot.strip()}'...")
                     await visible_slots.nth(0).click()
 
             await page.wait_for_timeout(500)

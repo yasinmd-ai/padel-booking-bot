@@ -10,16 +10,17 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until exactly 12:00:00 AM GST."""
+    """Holds execution until exactly 12:00:00 AM GST (or 3s before if preferred)."""
     now = datetime.now()
+    # Target midnight GST
     target = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
     if now >= target:
         target += timedelta(days=1)
 
     wait_seconds = (target - datetime.now()).total_seconds()
 
-    if wait_seconds > 300:
+    # If the workflow started close to midnight (within 10 mins), wait for the drop
+    if wait_seconds > 600:
         print("Manual run or outside release window — proceeding immediately.")
         return
 
@@ -29,7 +30,7 @@ async def wait_until_midnight():
     if wait_seconds > 0:
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight hit! Scraping date...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight hit! Executing booking...")
 
 
 async def main():
@@ -46,7 +47,7 @@ async def main():
             await browser.close()
             return
 
-        # 1. Login
+        # 1. Login & Session Initialization
         try:
             await page.wait_for_selector("#userName", timeout=15000)
             await page.fill("#userName", USERNAME)
@@ -56,21 +57,29 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
             
-            # Wait for auth response to complete
-            await page.wait_for_timeout(4000)
+            # Allow session tokens/cookies to settle completely
+            await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
             return
 
-        # 2. Direct Navigation & Court Selection
+        # 2. Direct Navigation & Robust Amenity Loading
         try:
             print("Navigating to Amenity Page...")
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
             
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
-            await new_booking_btn.wait_for(state="visible", timeout=15000)
+            
+            # Wait up to 30 seconds for the button to appear
+            try:
+                await new_booking_btn.wait_for(state="visible", timeout=30000)
+            except Exception:
+                print("New booking button slow to load, forcing page refresh...")
+                await page.reload(wait_until="domcontentloaded")
+                await new_booking_btn.wait_for(state="visible", timeout=30000)
+
             print("Successfully reached Amenity page! Clicking New booking...")
             await new_booking_btn.click()
 

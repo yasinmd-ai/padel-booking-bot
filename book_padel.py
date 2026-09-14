@@ -12,7 +12,6 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 async def wait_until_midnight():
     """Holds execution until 3 seconds before 12:00:00 AM GST (11:59:57 PM)."""
     now = datetime.now()
-    # Target 11:59:57 PM (3 seconds before midnight)
     target = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=3)
 
     if now >= target:
@@ -64,19 +63,13 @@ async def main():
             await browser.close()
             return
 
-        # 2. Direct Navigation & Robust Amenity Loading
+        # 2. Direct Navigation & Amenity Loading (Restored Working Logic)
         try:
             print("Navigating to Amenity Page...")
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
 
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
-
-            try:
-                await new_booking_btn.wait_for(state="visible", timeout=30000)
-            except Exception:
-                print("New booking button slow to load, forcing page refresh...")
-                await page.reload(wait_until="domcontentloaded")
-                await new_booking_btn.wait_for(state="visible", timeout=30000)
+            await new_booking_btn.wait_for(state="visible", timeout=30000)
 
             print("Successfully reached Amenity page! Clicking New booking...")
             await new_booking_btn.click()

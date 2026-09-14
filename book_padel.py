@@ -46,7 +46,7 @@ async def main():
             await browser.close()
             return
 
-        # 1. Login
+        # 1. Login & Wait for Session Initialization
         try:
             await page.wait_for_selector("#userName", timeout=15000)
             await page.fill("#userName", USERNAME)
@@ -56,17 +56,18 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
 
-            await page.wait_for_timeout(5000)
+            # Ensure background session API calls settle before navigating
+            await page.wait_for_load_state("networkidle", timeout=15000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
             return
 
-        # 2. Direct Navigation & Amenity Loading (Restored Working Logic)
+        # 2. Direct Navigation & Amenity Loading
         try:
             print("Navigating to Amenity Page...")
-            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(DIRECT_AMENITY_URL, wait_until="networkidle", timeout=30000)
 
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=30000)

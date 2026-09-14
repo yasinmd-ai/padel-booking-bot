@@ -10,16 +10,15 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until exactly 12:00:00 AM GST (or 3s before if preferred)."""
+    """Holds execution until exactly 12:00:00 AM GST."""
     now = datetime.now()
-    # Target midnight GST
     target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
     if now >= target:
         target += timedelta(days=1)
 
     wait_seconds = (target - datetime.now()).total_seconds()
 
-    # If the workflow started close to midnight (within 10 mins), wait for the drop
     if wait_seconds > 600:
         print("Manual run or outside release window — proceeding immediately.")
         return
@@ -47,7 +46,7 @@ async def main():
             await browser.close()
             return
 
-        # 1. Login & Session Initialization
+        # 1. Login
         try:
             await page.wait_for_selector("#userName", timeout=15000)
             await page.fill("#userName", USERNAME)
@@ -56,8 +55,7 @@ async def main():
 
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
-            
-            # Allow session tokens/cookies to settle completely
+
             await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
@@ -69,10 +67,9 @@ async def main():
         try:
             print("Navigating to Amenity Page...")
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
-            
+
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
-            
-            # Wait up to 30 seconds for the button to appear
+
             try:
                 await new_booking_btn.wait_for(state="visible", timeout=30000)
             except Exception:
@@ -111,7 +108,7 @@ async def main():
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
-            
+
             print("Clicked proceed to booking. Loading slots...")
             await asyncio.sleep(2)
 
@@ -122,7 +119,7 @@ async def main():
 
             date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
             date_count = await date_items.count()
-            
+
             if date_count > 0:
                 latest_date = date_items.nth(date_count - 1)
                 date_text = (await latest_date.text_content()).strip()
@@ -131,24 +128,28 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting 07:00 PM - 08:00 PM)
+            # Select Time Slot (Target Priority: 07:00 PM -> 08:00 PM -> 09:00 PM)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            target_time = page.locator(
-                "a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('07:00 PM')"
-            )
-            if await target_time.count() > 0:
-                print("Selecting slot: 07:00 PM - 08:00 PM...")
-                await target_time.first.click()
-            else:
-                visible_slots = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible:not(.search-box)")
-                slot_count = await visible_slots.count()
-                if slot_count > 0:
-                    selected_slot = await visible_slots.nth(0).text_content()
-                    print(f"Fallback: Selecting slot '{selected_slot.strip()}'...")
-                    await visible_slots.nth(0).click()
+            preferred_slots = ["07:00 PM", "08:00 PM", "09:00 PM"]
+            selected_slot_name = None
+
+            for slot in preferred_slots:
+                target_locator = page.locator(
+                    f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot}')"
+                )
+                if await target_locator.count() > 0:
+                    selected_slot_name = slot
+                    print(f"Selecting slot: {slot}...")
+                    await target_locator.first.click()
+                    break
+
+            if not selected_slot_name:
+                print("No preferred evening slots (07:00 PM, 08:00 PM, 09:00 PM) were available. Aborting booking.")
+                await browser.close()
+                return
 
             await page.wait_for_timeout(500)
 
@@ -158,7 +159,7 @@ async def main():
             )
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print("Booking submitted successfully!")
+            print(f"Booking submitted successfully for slot {selected_slot_name}!")
 
         except Exception as e:
             print(f"Booking attempt failed: {e}")

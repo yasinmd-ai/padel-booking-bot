@@ -2,8 +2,8 @@ name: Daily Padel Court Booking
 
 on:
   schedule:
-    # 7:58 PM UTC = 11:58 PM GST (Dubai Time)
-    - cron: '58 19 * * *'
+    # 19:55 UTC = 11:55 PM GST (Dubai Time)
+    - cron: '55 19 * * *'
   workflow_dispatch:
 
 jobs:

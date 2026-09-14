@@ -40,15 +40,15 @@ async def main():
 
         print("Navigating to Damac Living...")
         try:
-            await page.goto("https://damacliving.com", wait_until="commit", timeout=30000)
+            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             print(f"Navigation failed: {e}")
             await browser.close()
             return
 
-        # 1. Login & Wait for Session Initialization
+        # 1. Login
         try:
-            await page.wait_for_selector("#userName", timeout=15000)
+            await page.wait_for_selector("#userName", timeout=20000)
             await page.fill("#userName", USERNAME)
             await page.fill("input[type='password']", PASSWORD)
             await page.wait_for_timeout(500)
@@ -56,8 +56,8 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
 
-            # Ensure background session API calls settle before navigating
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            # Allow session tokens/cookies to settle without relying on networkidle
+            await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
             print(f"Login failed: {e}")
@@ -67,7 +67,7 @@ async def main():
         # 2. Direct Navigation & Amenity Loading
         try:
             print("Navigating to Amenity Page...")
-            await page.goto(DIRECT_AMENITY_URL, wait_until="networkidle", timeout=30000)
+            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
 
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=30000)

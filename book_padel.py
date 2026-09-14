@@ -10,9 +10,10 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until exactly 12:00:00 AM GST."""
+    """Holds execution until 3 seconds before 12:00:00 AM GST (11:59:57 PM)."""
     now = datetime.now()
-    target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Target 11:59:57 PM (3 seconds before midnight)
+    target = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=3)
 
     if now >= target:
         target += timedelta(days=1)
@@ -24,12 +25,12 @@ async def wait_until_midnight():
         return
 
     print(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s for midnight drop..."
+        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s to click Proceed (at 11:59:57 PM)..."
     )
     if wait_seconds > 0:
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight hit! Executing booking...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 3 seconds to midnight! Executing Proceed to booking...")
 
 
 async def main():
@@ -100,10 +101,10 @@ async def main():
             await browser.close()
             return
 
-        # 3. Hold execution until midnight GST
+        # 3. Hold execution until 11:59:57 PM GST
         await wait_until_midnight()
 
-        # 4. Rapid Execution at 12:00:00 AM GST
+        # 4. Rapid Execution starting at 11:59:57 PM GST
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)

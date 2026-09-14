@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -25,5 +25,5 @@ jobs:
       - name: Run booking script
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
-          PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
+          DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
         run: python book_padel.py

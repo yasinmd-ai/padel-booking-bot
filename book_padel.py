@@ -56,7 +56,7 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
 
-            # Allow session tokens/cookies to settle without relying on networkidle
+            # Pause to let authentication tokens initialize cleanly
             await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
@@ -64,7 +64,7 @@ async def main():
             await browser.close()
             return
 
-        # 2. Direct Navigation & Amenity Loading
+        # 2. Direct Navigation & Amenity Setup
         try:
             print("Navigating to Amenity Page...")
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
@@ -123,12 +123,16 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Target Priority: 07:00 PM -> 08:00 PM -> 09:00 PM)
+            # Select Time Slot (Strict Range Priority: 7-8 PM -> 8-9 PM -> 9-10 PM)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            preferred_slots = ["07:00 PM", "08:00 PM", "09:00 PM"]
+            preferred_slots = [
+                "07:00 PM - 08:00 PM",
+                "08:00 PM - 09:00 PM",
+                "09:00 PM - 10:00 PM"
+            ]
             selected_slot_name = None
 
             for slot in preferred_slots:
@@ -142,7 +146,7 @@ async def main():
                     break
 
             if not selected_slot_name:
-                print("No preferred evening slots (07:00 PM, 08:00 PM, 09:00 PM) were available. Aborting booking.")
+                print("No preferred evening slots (07:00 PM to 10:00 PM) were available. Aborting booking.")
                 await browser.close()
                 return
 

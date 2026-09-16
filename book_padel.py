@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
@@ -56,7 +57,6 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
 
-            # Pause to allow session tokens to load
             await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
@@ -107,7 +107,7 @@ async def main():
             print("Clicked proceed to booking. Loading slots...")
             await asyncio.sleep(2)
 
-            # Select Date (picks the furthest released date at bottom of list)
+            # Select Date (Parses calendar dates to pick the true latest date, handling month rollovers)
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
@@ -116,14 +116,29 @@ async def main():
             date_count = await date_items.count()
 
             if date_count > 0:
-                latest_date = date_items.nth(date_count - 1)
-                date_text = (await latest_date.text_content()).strip()
-                print(f"Selecting date: '{date_text}'")
-                await latest_date.click()
+                best_index = 0
+                latest_parsed_date = None
+                current_year = datetime.now().year
+
+                for i in range(date_count):
+                    raw_text = (await date_items.nth(i).text_content()).strip()
+                    try:
+                        # Append current year to parse full date object (e.g. "1 October 2026")
+                        parsed_dt = datetime.strptime(f"{raw_text} {current_year}", "%d %B %Y")
+                        if latest_parsed_date is None or parsed_dt > latest_parsed_date:
+                            latest_parsed_date = parsed_dt
+                            best_index = i
+                    except ValueError:
+                        continue
+
+                target_item = date_items.nth(best_index)
+                selected_text = (await target_item.text_content()).strip()
+                print(f"Selecting furthest calendar date: '{selected_text}'")
+                await target_item.click()
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting strictly 08:00 PM string for 7:00 PM - 8:00 PM slot)
+            # Select Time Slot (Targeting 08:00 PM for the 7:00 PM - 8:00 PM slot)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -154,7 +169,7 @@ async def main():
             )
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print(f"Booking submitted successfully for 7:00 PM - 8:00 PM!")
+            print("Booking submitted successfully for 7:00 PM - 8:00 PM!")
 
         except Exception as e:
             print(f"Booking attempt failed: {e}")

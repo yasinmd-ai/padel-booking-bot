@@ -56,7 +56,7 @@ async def main():
             login_btn = page.locator("button.button__primary:has-text('Sign in')")
             await login_btn.click()
 
-            # Pause to let authentication tokens initialize cleanly
+            # Pause to allow session tokens to load
             await page.wait_for_timeout(5000)
             print("Logged in successfully.")
         except Exception as e:
@@ -107,7 +107,7 @@ async def main():
             print("Clicked proceed to booking. Loading slots...")
             await asyncio.sleep(2)
 
-            # Select Date
+            # Select Date (picks the furthest released date at bottom of list)
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
@@ -123,16 +123,12 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Strict Range Priority: 7-8 PM -> 8-9 PM -> 9-10 PM)
+            # Select Time Slot (Targeting strictly 08:00 PM string for 7:00 PM - 8:00 PM slot)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            preferred_slots = [
-                "07:00 PM - 08:00 PM",
-                "08:00 PM - 09:00 PM",
-                "09:00 PM - 10:00 PM"
-            ]
+            preferred_slots = ["08:00 PM"]
             selected_slot_name = None
 
             for slot in preferred_slots:
@@ -141,12 +137,12 @@ async def main():
                 )
                 if await target_locator.count() > 0:
                     selected_slot_name = slot
-                    print(f"Selecting slot: {slot}...")
+                    print(f"Selecting slot: {slot} (7:00 PM - 8:00 PM)...")
                     await target_locator.first.click()
                     break
 
             if not selected_slot_name:
-                print("No preferred evening slots (07:00 PM to 10:00 PM) were available. Aborting booking.")
+                print("The 7:00 PM - 8:00 PM slot is not available. Aborting booking.")
                 await browser.close()
                 return
 
@@ -158,7 +154,7 @@ async def main():
             )
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print(f"Booking submitted successfully for slot {selected_slot_name}!")
+            print(f"Booking submitted successfully for 7:00 PM - 8:00 PM!")
 
         except Exception as e:
             print(f"Booking attempt failed: {e}")

@@ -11,9 +11,9 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until 3 seconds before 12:00:00 AM GST (11:59:57 PM)."""
+    """Holds execution until exactly 12:00:00 AM GST."""
     now = datetime.now()
-    target = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=3)
+    target = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if now >= target:
         target += timedelta(days=1)
@@ -25,12 +25,12 @@ async def wait_until_midnight():
         return
 
     print(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s to click Proceed (at 11:59:57 PM)..."
+        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s to click Proceed (at 12:00:00 AM)..."
     )
     if wait_seconds > 0:
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 3 seconds to midnight! Executing Proceed to booking...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight reached! Executing Proceed to booking...")
 
 
 async def main():
@@ -95,10 +95,10 @@ async def main():
             await browser.close()
             return
 
-        # 3. Hold execution until 11:59:57 PM GST
+        # 3. Hold execution until exactly 12:00:00 AM GST
         await wait_until_midnight()
 
-        # 4. Rapid Execution starting at 11:59:57 PM GST
+        # 4. Rapid Execution starting at 12:00:00 AM GST
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
@@ -123,7 +123,6 @@ async def main():
                 for i in range(date_count):
                     raw_text = (await date_items.nth(i).text_content()).strip()
                     try:
-                        # Append current year to parse full date object (e.g. "1 October 2026")
                         parsed_dt = datetime.strptime(f"{raw_text} {current_year}", "%d %B %Y")
                         if latest_parsed_date is None or parsed_dt > latest_parsed_date:
                             latest_parsed_date = parsed_dt
@@ -138,7 +137,7 @@ async def main():
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting 08:00 PM for the 7:00 PM - 8:00 PM slot)
+            # Select Time Slot (Targeting 08:00 PM string for the 7:00 PM - 8:00 PM slot)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()

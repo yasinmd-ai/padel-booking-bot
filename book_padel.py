@@ -9,29 +9,52 @@ PASSWORD = os.getenv("DAMAC_PASSWORD")
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
 
-async def wait_until_midnight():
-    """Holds execution until 1 second before midnight GST (11:59:59 PM GST)."""
+async def sleep_until_pre_booking_time():
+    """Sleeps BEFORE opening browser until 11:58:00 PM GST to avoid session timeouts."""
     gst_now = datetime.utcnow() + timedelta(hours=4)
-    target_gst = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Target 11:58:00 PM GST (2 minutes before midnight)
+    target_pre_time = today_midnight - timedelta(minutes=2)
+    
+    seconds_past_midnight = (gst_now - today_midnight).total_seconds()
 
-    # Align to next midnight drop
-    if gst_now >= target_gst and (gst_now - target_gst).total_seconds() > 60:
-        target_gst += timedelta(days=1)
+    # Case A: Launched slightly past midnight (0 - 15 mins) -> Execute immediately
+    if 0 <= seconds_past_midnight <= 900:
+        print(f"[{gst_now.strftime('%H:%M:%S')} GST] Launched past midnight ({seconds_past_midnight:.1f}s past). Running immediately!", flush=True)
+        return
 
-    target_time = target_gst - timedelta(seconds=1)
+    # Case B: Launched before 11:58 PM GST -> Sleep until 11:58 PM GST
+    if gst_now < target_pre_time:
+        wait_seconds = (target_pre_time - gst_now).total_seconds()
+        print(f"[{gst_now.strftime('%H:%M:%S')} GST] Runner started early. Sleeping {wait_seconds:.2f}s until 11:58 PM GST before logging in...", flush=True)
+        await asyncio.sleep(wait_seconds)
+    else:
+        print(f"[{gst_now.strftime('%H:%M:%S')} GST] Within login window. Proceeding to login immediately...", flush=True)
+
+
+async def wait_for_exact_midnight():
+    """Holds on pre-booking screen until 11:59:59 PM GST."""
+    gst_now = datetime.utcnow() + timedelta(hours=4)
+    today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:
+        today_midnight += timedelta(days=1)
+
+    target_time = today_midnight - timedelta(seconds=1)
     wait_seconds = (target_time - gst_now).total_seconds()
 
     if wait_seconds > 0:
-        print(
-            f"[{gst_now.strftime('%H:%M:%S')} GST] Logged in & ready on pre-booking screen. Waiting {wait_seconds:.2f}s for release...",
-            flush=True,
-        )
+        print(f"[{gst_now.strftime('%H:%M:%S')} GST] Ready on pre-booking screen. Waiting {wait_seconds:.2f}s for 11:59:59 PM GST...", flush=True)
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.utcnow() + timedelta(hours=4):%H:%M:%S} GST] Release time reached! Executing Proceed to booking...", flush=True)
+    print(f"[{datetime.utcnow() + timedelta(hours=4):%H:%M:%S} GST] Midnight release reached! Clicking proceed...", flush=True)
 
 
 async def main():
+    # 1. Wait FIRST before launching browser/logging in
+    await sleep_until_pre_booking_time()
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
@@ -45,7 +68,7 @@ async def main():
             await browser.close()
             return
 
-        # 1. Login
+        # 2. Login
         try:
             await page.wait_for_selector("#userName", timeout=20000)
             await page.fill("#userName", USERNAME)
@@ -62,7 +85,7 @@ async def main():
             await browser.close()
             return
 
-        # 2. Setup Amenity
+        # 3. Setup Amenity
         try:
             print("Navigating to Amenity Page...", flush=True)
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
@@ -84,17 +107,17 @@ async def main():
             await next_btn.wait_for(state="visible", timeout=15000)
             await next_btn.click()
 
-            print("Court selected successfully. Holding at pre-booking screen...", flush=True)
+            print("Court selected. Holding at pre-booking screen...", flush=True)
 
         except Exception as e:
             print(f"Pre-booking setup failed: {e}", flush=True)
             await browser.close()
             return
 
-        # 3. Midnight Hold
-        await wait_until_midnight()
+        # 4. Short Hold until Midnight (if logged in before 12:00:00 AM)
+        await wait_for_exact_midnight()
 
-        # 4. Rapid Execution & Selection
+        # 5. Rapid Execution
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
@@ -116,7 +139,6 @@ async def main():
             print(f"Selected furthest available date: '{selected_text}'", flush=True)
             await date_items.last.click()
 
-            # Buffer allowing time dropdown options to render for the newly picked date
             await page.wait_for_timeout(1000)
 
             # Open Time Dropdown
@@ -124,11 +146,22 @@ async def main():
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            # Target 08:00 PM (7:00 PM - 8:00 PM slot)
-            slot_locator = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('08:00 PM')")
-            await slot_locator.first.wait_for(state="visible", timeout=5000)
-            print("Selecting 08:00 PM slot...", flush=True)
-            await slot_locator.first.click()
+            # Priority Slots: 08:00 PM (7-8 PM) first, fallback to 07:00 PM (6-7 PM)
+            preferred_slots = [("08:00 PM", "7:00 PM - 8:00 PM"), ("07:00 PM", "6:00 PM - 7:00 PM")]
+            selected_slot_label = None
+
+            for slot_code, slot_label in preferred_slots:
+                slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot_code}')")
+                if await slot_locator.count() > 0:
+                    selected_slot_label = slot_label
+                    print(f"Selecting slot: {slot_code} ({slot_label})...", flush=True)
+                    await slot_locator.first.click()
+                    break
+
+            if not selected_slot_label:
+                print("Neither 7-8 PM nor 6-7 PM slots are available. Aborting booking.", flush=True)
+                await browser.close()
+                return
 
             await page.wait_for_timeout(500)
 
@@ -136,7 +169,7 @@ async def main():
             book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print("Booking submitted successfully for 7:00 PM - 8:00 PM!", flush=True)
+            print(f"Booking submitted successfully for {selected_slot_label}!", flush=True)
 
         except Exception as e:
             print(f"Booking attempt failed: {e}", flush=True)

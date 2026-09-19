@@ -1,6 +1,5 @@
 import asyncio
 import os
-import re
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
@@ -11,26 +10,25 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until exactly 12:00:00 AM GST."""
-    now = datetime.now()
-    target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    """Holds execution until 1 second before 12:00:00 AM GST (11:59:59 PM GST)."""
+    # Explicitly calculate current time in Dubai (GST = UTC+4)
+    gst_now = datetime.utcnow() + timedelta(hours=4)
+    target_gst = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    if now >= target:
-        target += timedelta(days=1)
+    # If past midnight, align to next midnight drop
+    if gst_now >= target_gst and (gst_now - target_gst).total_seconds() > 60:
+        target_gst += timedelta(days=1)
 
-    wait_seconds = (target - datetime.now()).total_seconds()
+    target_time = target_gst - timedelta(seconds=1)
+    wait_seconds = (target_time - gst_now).total_seconds()
 
-    if wait_seconds > 600:
-        print("Manual run or outside release window — proceeding immediately.")
-        return
-
-    print(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Standing by on booking screen. Waiting {wait_seconds:.2f}s to click Proceed (at 12:00:00 AM)..."
-    )
     if wait_seconds > 0:
+        print(
+            f"[{gst_now.strftime('%H:%M:%S')} GST] Standing by on pre-booking screen. Waiting {wait_seconds:.2f}s to click Proceed..."
+        )
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Midnight reached! Executing Proceed to booking...")
+    print(f"[{datetime.utcnow() + timedelta(hours=4):%H:%M:%S} GST] Executing Proceed to booking...")
 
 
 async def main():
@@ -95,49 +93,63 @@ async def main():
             await browser.close()
             return
 
-        # 3. Hold execution until exactly 12:00:00 AM GST
+        # 3. Hold execution until release window
         await wait_until_midnight()
 
-        # 4. Rapid Execution starting at 12:00:00 AM GST
+        # 4. Rapid Execution & Selection
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
 
             print("Clicked proceed to booking. Loading slots...")
-            await asyncio.sleep(2)
+            await asyncio.sleep(1.5)
 
-            # Select Date (Parses calendar dates to pick the true latest date, handling month rollovers)
-            date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-            await date_dropdown.wait_for(state="visible", timeout=10000)
-            await date_dropdown.click()
+            # Evaluate dates using Dubai Time (GST)
+            gst_now = datetime.utcnow() + timedelta(hours=4)
+            current_year = gst_now.year
 
-            date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-            date_count = await date_items.count()
+            # Poll date dropdown up to 10 attempts (approx 5-8 seconds)
+            for attempt in range(10):
+                date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
+                await date_dropdown.wait_for(state="visible", timeout=10000)
+                await date_dropdown.click()
 
-            if date_count > 0:
-                best_index = 0
-                latest_parsed_date = None
-                current_year = datetime.now().year
+                date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
+                date_count = await date_items.count()
 
-                for i in range(date_count):
-                    raw_text = (await date_items.nth(i).text_content()).strip()
-                    try:
-                        parsed_dt = datetime.strptime(f"{raw_text} {current_year}", "%d %B %Y")
-                        if latest_parsed_date is None or parsed_dt > latest_parsed_date:
-                            latest_parsed_date = parsed_dt
-                            best_index = i
-                    except ValueError:
-                        continue
+                if date_count > 0:
+                    best_index = -1
+                    latest_parsed_date = None
 
-                target_item = date_items.nth(best_index)
-                selected_text = (await target_item.text_content()).strip()
-                print(f"Selecting furthest calendar date: '{selected_text}'")
-                await target_item.click()
+                    # Find the absolute latest date entry across the entire menu
+                    for i in range(date_count):
+                        raw_text = (await date_items.nth(i).text_content()).strip()
+                        try:
+                            parsed_dt = datetime.strptime(f"{raw_text} {current_year}", "%d %B %Y")
+                            if latest_parsed_date is None or parsed_dt > latest_parsed_date:
+                                latest_parsed_date = parsed_dt
+                                best_index = i
+                        except ValueError:
+                            continue
+
+                    if best_index != -1:
+                        target_item = date_items.nth(best_index)
+                        selected_text = (await target_item.text_content()).strip()
+
+                        # Click the maximum parsed calendar date found (e.g. 04 October over 03 October)
+                        print(f"Selecting furthest calendar date found: '{selected_text}'")
+                        await target_item.click()
+                        break
+
+                if attempt < 9:
+                    print(f"Attempt {attempt + 1}: Waiting for fresh date drop... Retrying.")
+                    await page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
 
             await page.wait_for_timeout(1000)
 
-            # Select Time Slot (Targeting 08:00 PM string for the 7:00 PM - 8:00 PM slot)
+            # Select Time Slot (Targeting 08:00 PM for the 7:00 PM - 8:00 PM slot)
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()

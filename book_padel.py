@@ -10,12 +10,10 @@ DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenit
 
 
 async def wait_until_midnight():
-    """Holds execution until 1 second before 12:00:00 AM GST (11:59:59 PM GST)."""
-    # Explicitly calculate current time in Dubai (GST = UTC+4)
+    """Holds execution until 1 second before midnight GST."""
     gst_now = datetime.utcnow() + timedelta(hours=4)
     target_gst = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # If past midnight, align to next midnight drop
     if gst_now >= target_gst and (gst_now - target_gst).total_seconds() > 60:
         target_gst += timedelta(days=1)
 
@@ -24,11 +22,12 @@ async def wait_until_midnight():
 
     if wait_seconds > 0:
         print(
-            f"[{gst_now.strftime('%H:%M:%S')} GST] Standing by on pre-booking screen. Waiting {wait_seconds:.2f}s to click Proceed..."
+            f"[{gst_now.strftime('%H:%M:%S')} GST] Standing by. Waiting {wait_seconds:.2f}s...",
+            flush=True,
         )
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{datetime.utcnow() + timedelta(hours=4):%H:%M:%S} GST] Executing Proceed to booking...")
+    print(f"[{datetime.utcnow() + timedelta(hours=4):%H:%M:%S} GST] Executing Proceed to booking...", flush=True)
 
 
 async def main():
@@ -37,11 +36,11 @@ async def main():
         context = await browser.new_context()
         page = await context.new_page()
 
-        print("Navigating to Damac Living...")
+        print("Navigating to Damac Living...", flush=True)
         try:
             await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
-            print(f"Navigation failed: {e}")
+            print(f"Navigation failed: {e}", flush=True)
             await browser.close()
             return
 
@@ -56,21 +55,19 @@ async def main():
             await login_btn.click()
 
             await page.wait_for_timeout(5000)
-            print("Logged in successfully.")
+            print("Logged in successfully.", flush=True)
         except Exception as e:
-            print(f"Login failed: {e}")
+            print(f"Login failed: {e}", flush=True)
             await browser.close()
             return
 
-        # 2. Direct Navigation & Amenity Setup
+        # 2. Setup Amenity
         try:
-            print("Navigating to Amenity Page...")
+            print("Navigating to Amenity Page...", flush=True)
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
 
             new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
             await new_booking_btn.wait_for(state="visible", timeout=30000)
-
-            print("Successfully reached Amenity page! Clicking New booking...")
             await new_booking_btn.click()
 
             await page.wait_for_selector(".modal-body", timeout=15000)
@@ -86,104 +83,54 @@ async def main():
             await next_btn.wait_for(state="visible", timeout=15000)
             await next_btn.click()
 
-            print("Court selected successfully. Waiting at pre-booking screen...")
+            print("Court selected successfully. Waiting at pre-booking screen...", flush=True)
 
         except Exception as e:
-            print(f"Pre-booking setup failed: {e}")
+            print(f"Pre-booking setup failed: {e}", flush=True)
             await browser.close()
             return
 
-        # 3. Hold execution until release window
+        # 3. Midnight Hold
         await wait_until_midnight()
 
-        # 4. Rapid Execution & Selection
+        # 4. Ultra-Fast Instant Selection
         try:
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
 
-            print("Clicked proceed to booking. Loading slots...")
-            await asyncio.sleep(1.5)
+            # Open Date Dropdown
+            date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
+            await date_dropdown.wait_for(state="visible", timeout=10000)
+            await date_dropdown.click()
 
-            # Evaluate dates using Dubai Time (GST)
-            gst_now = datetime.utcnow() + timedelta(hours=4)
-            current_year = gst_now.year
+            # Select last visible item instantly without loop delays
+            date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
+            await date_items.last.wait_for(state="visible", timeout=5000)
+            
+            selected_text = (await date_items.last.text_content()).strip()
+            print(f"Instantly selected furthest date: '{selected_text}'", flush=True)
+            await date_items.last.click()
 
-            # Poll date dropdown up to 10 attempts (approx 5-8 seconds)
-            for attempt in range(10):
-                date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-                await date_dropdown.wait_for(state="visible", timeout=10000)
-                await date_dropdown.click()
-
-                date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-                date_count = await date_items.count()
-
-                if date_count > 0:
-                    best_index = -1
-                    latest_parsed_date = None
-
-                    # Find the absolute latest date entry across the entire menu
-                    for i in range(date_count):
-                        raw_text = (await date_items.nth(i).text_content()).strip()
-                        try:
-                            parsed_dt = datetime.strptime(f"{raw_text} {current_year}", "%d %B %Y")
-                            if latest_parsed_date is None or parsed_dt > latest_parsed_date:
-                                latest_parsed_date = parsed_dt
-                                best_index = i
-                        except ValueError:
-                            continue
-
-                    if best_index != -1:
-                        target_item = date_items.nth(best_index)
-                        selected_text = (await target_item.text_content()).strip()
-
-                        # Click the maximum parsed calendar date found (e.g. 04 October over 03 October)
-                        print(f"Selecting furthest calendar date found: '{selected_text}'")
-                        await target_item.click()
-                        break
-
-                if attempt < 9:
-                    print(f"Attempt {attempt + 1}: Waiting for fresh date drop... Retrying.")
-                    await page.keyboard.press("Escape")
-                    await asyncio.sleep(0.5)
-
-            await page.wait_for_timeout(1000)
-
-            # Select Time Slot (Targeting 08:00 PM for the 7:00 PM - 8:00 PM slot)
+            # Open Time Dropdown
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            preferred_slots = ["08:00 PM"]
-            selected_slot_name = None
-
-            for slot in preferred_slots:
-                target_locator = page.locator(
-                    f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot}')"
-                )
-                if await target_locator.count() > 0:
-                    selected_slot_name = slot
-                    print(f"Selecting slot: {slot} (7:00 PM - 8:00 PM)...")
-                    await target_locator.first.click()
-                    break
-
-            if not selected_slot_name:
-                print("The 7:00 PM - 8:00 PM slot is not available. Aborting booking.")
-                await browser.close()
-                return
-
-            await page.wait_for_timeout(500)
+            # Target 08:00 PM (7:00 PM - 8:00 PM slot)
+            slot_locator = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('08:00 PM')")
+            await slot_locator.first.wait_for(state="visible", timeout=5000)
+            print("Selecting 08:00 PM slot...", flush=True)
+            await slot_locator.first.click()
 
             # Confirm Booking
-            book_now_btn = page.locator(
-                "button.button__primary[type='submit']:has-text('Book now')"
-            )
+            book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print("Booking submitted successfully for 7:00 PM - 8:00 PM!")
+            print("Booking submitted successfully!", flush=True)
 
         except Exception as e:
-            print(f"Booking attempt failed: {e}")
+            print(f"Booking attempt failed: {e}", flush=True)
 
         await asyncio.sleep(5)
         await browser.close()

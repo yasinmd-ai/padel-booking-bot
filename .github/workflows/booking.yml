@@ -2,8 +2,8 @@ name: Daily Padel Court Booking
 
 on:
   schedule:
-    # Triggers at 11:55 PM GST (Dubai Time) every night
-    - cron: '55 19 * * *'
+    # Triggers at 11:58 PM GST (19:58 UTC) every night
+    - cron: '58 19 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,4 +26,5 @@ jobs:
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
+          PYTHONUNBUFFERED: "1"
         run: python book_padel.py

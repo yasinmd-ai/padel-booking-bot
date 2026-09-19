@@ -2,8 +2,8 @@ name: Daily Padel Court Booking
 
 on:
   schedule:
-    # Triggers at 11:58 PM GST (19:58 UTC) every night
-    - cron: '58 19 * * *'
+    # Triggers at 11:50 PM GST (19:50 UTC) to absorb GitHub delay
+    - cron: '50 19 * * *'
   workflow_dispatch:
 
 jobs:

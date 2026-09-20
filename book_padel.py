@@ -169,12 +169,21 @@ async def main():
             book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
             await book_now_btn.wait_for(state="visible", timeout=10000)
             await book_now_btn.click()
-            print(f"Booking submitted successfully for {selected_slot_label}!", flush=True)
+            print(f"Clicked 'Book now' for {selected_slot_label}. Waiting for backend response...", flush=True)
+
+            # Wait for backend response to ensure request completes
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+                print(f"Network request completed successfully for {selected_slot_label}!", flush=True)
+            except Exception:
+                print("Network idle wait timed out. Holding extra 10s for slow processing...", flush=True)
+
+            # Final 10 second safety wait
+            await asyncio.sleep(10)
 
         except Exception as e:
             print(f"Booking attempt failed: {e}", flush=True)
 
-        await asyncio.sleep(5)
         await browser.close()
 
 

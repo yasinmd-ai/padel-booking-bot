@@ -123,10 +123,8 @@ async def main():
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
 
-            print("Clicked proceed. Waiting 1.5s for Damac backend date release...", flush=True)
-            await asyncio.sleep(1.5)
-
-            # Open Date Dropdown
+            # Open Date Dropdown instantly upon visibility (no hardcoded sleep)
+            print("Clicked proceed. Waiting directly for date dropdown...", flush=True)
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
@@ -139,9 +137,7 @@ async def main():
             print(f"Selected furthest available date: '{selected_text}'", flush=True)
             await date_items.last.click()
 
-            await page.wait_for_timeout(1000)
-
-            # Open Time Dropdown
+            # Open Time Dropdown instantly
             time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
@@ -162,8 +158,6 @@ async def main():
                 print("Neither 7-8 PM nor 6-7 PM slots are available. Aborting booking.", flush=True)
                 await browser.close()
                 return
-
-            await page.wait_for_timeout(500)
 
             # Confirm Booking
             book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")

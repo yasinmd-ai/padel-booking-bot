@@ -142,8 +142,8 @@ async def main():
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            # Priority Slots: 08:00 PM (7-8 PM) first, fallback to 07:00 PM (6-7 PM)
-            preferred_slots = [("08:00 PM", "7:00 PM - 8:00 PM"), ("07:00 PM", "6:00 PM - 7:00 PM")]
+            # Priority Slots: 09:00 PM (8-9 PM) first, fallback to 08:00 PM (7-8 PM)
+            preferred_slots = [("09:00 PM", "8:00 PM - 9:00 PM"), ("08:00 PM", "7:00 PM - 8:00 PM")]
             selected_slot_label = None
 
             for slot_code, slot_label in preferred_slots:
@@ -155,7 +155,7 @@ async def main():
                     break
 
             if not selected_slot_label:
-                print("Neither 7-8 PM nor 6-7 PM slots are available. Aborting booking.", flush=True)
+                print("Neither 8-9 PM nor 7-8 PM slots are available. Aborting booking.", flush=True)
                 await browser.close()
                 return
 

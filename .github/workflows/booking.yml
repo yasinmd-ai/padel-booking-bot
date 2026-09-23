@@ -1,30 +1,41 @@
-name: Daily Padel Court Booking
+name: Book Padel Court
 
 on:
   schedule:
-    # Triggers at 11:50 PM GST (19:50 UTC) to absorb GitHub delay
+    # 19:50 UTC = 23:50 GST (Dubai Time)
     - cron: '50 19 * * *'
   workflow_dispatch:
 
 jobs:
   book:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-        
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          
-      - name: Install dependencies
+          python-version: '3.10'
+
+      - name: Install Dependencies
         run: |
-          pip install playwright
+          python -m pip install --upgrade pip
+          pip install playwright aiohttp
           playwright install chromium
-          
-      - name: Run booking script
+
+      - name: Run Booking Script
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
-          PYTHONUNBUFFERED: "1"
-        run: python book_padel.py
+        run: |
+          python book_padel.py
+
+      - name: Upload Booking Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-screenshots
+          path: "*.png"
+          if-no-files-found: ignore

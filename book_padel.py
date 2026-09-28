@@ -1,3 +1,4 @@
+import os
 import asyncio
 import re
 from datetime import datetime, timezone, timedelta
@@ -47,9 +48,12 @@ async def run_booking():
         print("Navigating to Damac Living...", flush=True)
         await page.goto(LOGIN_URL, wait_until="networkidle")
 
-        # Fill credentials (uses environment variables in GitHub Actions)
-        await page.fill("input[name='username'], input[type='email']", "YOUR_EMAIL_HERE")
-        await page.fill("input[name='password'], input[type='password']", "YOUR_PASSWORD_HERE")
+        # Fill credentials using GitHub Actions environment variables
+        username = os.environ.get("DAMAC_USERNAME") or os.environ.get("USERNAME")
+        password = os.environ.get("DAMAC_PASSWORD") or os.environ.get("PASSWORD")
+
+        await page.fill("input[name='username'], input[type='email']", username)
+        await page.fill("input[name='password'], input[type='password']", password)
         await page.click("button[type='submit']")
         await page.wait_for_load_state("networkidle")
         print("Logged in successfully.", flush=True)

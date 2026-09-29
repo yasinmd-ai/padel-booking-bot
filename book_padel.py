@@ -15,14 +15,10 @@ PREFERRED_SLOTS = [
     ("08:00 PM", "7:00 PM - 8:00 PM"),
 ]
 
-CLOCK_OFFSET = timedelta(0)  # Populated by sync_server_time()
+CLOCK_OFFSET = timedelta(0)
 
 
 async def sync_server_time():
-    """
-    Fetches the Date header from damacliving.com and computes the offset
-    between the runner's local clock and Damac's server clock.
-    """
     global CLOCK_OFFSET
     try:
         async with aiohttp.ClientSession() as session:
@@ -32,54 +28,46 @@ async def sync_server_time():
                     server_time = datetime.strptime(date_header, "%a, %d %b %Y %H:%M:%S %Z").replace(tzinfo=timezone.utc)
                     local_time = datetime.now(timezone.utc)
                     CLOCK_OFFSET = server_time - local_time
-                    print(f"[SYNC] Server-local clock offset: {CLOCK_OFFSET.total_seconds():.2f}s", flush=True)
-                else:
-                    print("[SYNC] No Date header returned, proceeding with local clock (offset=0).", flush=True)
+                    print(f"[SYNC] Server clock offset: {CLOCK_OFFSET.total_seconds():.2f}s", flush=True)
     except Exception as e:
-        print(f"[SYNC] Time sync failed ({e}), proceeding with local clock (offset=0).", flush=True)
+        print(f"[SYNC] Time sync failed ({e}), proceeding with local clock.", flush=True)
 
 
 def synced_now_gst():
-    """Local time corrected by CLOCK_OFFSET, converted to GST (UTC+4)."""
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
 async def sleep_until_pre_booking_time():
-    """Sleeps BEFORE opening browser until ~11:58:00 PM GST to avoid session timeouts."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
 
     if gst_now < today_midnight + timedelta(minutes=15):
-        print(f"[{gst_now:%H:%M:%S} GST] Launched just past midnight. Running immediately!", flush=True)
         return
 
     target_pre_time = next_midnight - timedelta(minutes=2)
-
     if gst_now < target_pre_time:
         wait_seconds = (target_pre_time - gst_now).total_seconds()
-        print(f"[{gst_now:%H:%M:%S} GST] Sleeping {wait_seconds:.2f}s until 11:58 PM GST before logging in...", flush=True)
+        print(f"[{gst_now:%H:%M:%S} GST] Sleeping {wait_seconds:.2f}s until pre-booking window...", flush=True)
         await asyncio.sleep(wait_seconds)
-    else:
-        print(f"[{gst_now:%H:%M:%S} GST] Within login window. Proceeding to login immediately...", flush=True)
 
 
-async def wait_for_exact_midnight():
-    """Holds on pre-booking screen until exactly 11:59:59 PM GST."""
+async def wait_for_release_trigger():
+    """Triggers at 23:59:58.8 GST (1.2s before midnight) to account for navigation load time."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:
         today_midnight += timedelta(days=1)
 
-    target_time = today_midnight - timedelta(seconds=1)
+    target_time = today_midnight - timedelta(seconds=1, milliseconds=200)  # 23:59:58.8 GST
     wait_seconds = (target_time - gst_now).total_seconds()
 
     if wait_seconds > 0:
-        print(f"[{gst_now:%H:%M:%S} GST] Ready on pre-booking screen. Waiting {wait_seconds:.2f}s for 11:59:59 PM GST...", flush=True)
+        print(f"[{gst_now:%H:%M:%S} GST] Ready. Waiting {wait_seconds:.2f}s until 23:59:58.8 GST...", flush=True)
         await asyncio.sleep(wait_seconds)
 
-    print(f"[{synced_now_gst():%H:%M:%S} GST] Midnight release reached! Clicking proceed...", flush=True)
+    print(f"[{synced_now_gst():%H:%M:%S} GST] Triggering booking pipeline...", flush=True)
 
 
 async def main():
@@ -94,30 +82,13 @@ async def main():
         print("Navigating to Damac Living...", flush=True)
         try:
             await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
-        except Exception as e:
-            print(f"Navigation failed: {e}", flush=True)
-            await browser.close()
-            return
-
-        # 2. Login
-        try:
             await page.wait_for_selector("#userName", timeout=20000)
             await page.fill("#userName", USERNAME)
             await page.fill("input[type='password']", PASSWORD)
-            await page.wait_for_timeout(500)
-
-            login_btn = page.locator("button.button__primary:has-text('Sign in')")
-            await login_btn.click()
-
-            await page.wait_for_timeout(5000)
+            await page.click("button.button__primary:has-text('Sign in')")
+            await page.wait_for_timeout(4000)
             print("Logged in successfully.", flush=True)
-        except Exception as e:
-            print(f"Login failed: {e}", flush=True)
-            await browser.close()
-            return
 
-        # 3. Setup Amenity
-        try:
             print("Navigating to Amenity Page...", flush=True)
             await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
 
@@ -126,113 +97,71 @@ async def main():
             await new_booking_btn.click()
 
             await page.wait_for_selector(".modal-body", timeout=15000)
-            await page.wait_for_timeout(500)
-
-            court_option = page.locator(".modal-body").get_by_text(
-                "D2 Sports Town - Paddle Court 1", exact=True
-            )
-            await court_option.wait_for(state="visible", timeout=15000)
+            court_option = page.locator(".modal-body").get_by_text("D2 Sports Town - Paddle Court 1", exact=True)
             await court_option.click(force=True)
 
             next_btn = page.locator("button.button__primary:has-text('Next')")
-            await next_btn.wait_for(state="visible", timeout=15000)
             await next_btn.click()
-
             print("Court selected. Holding at pre-booking screen...", flush=True)
 
         except Exception as e:
-            print(f"Pre-booking setup failed: {e}", flush=True)
+            print(f"Setup failed: {e}", flush=True)
             await browser.close()
             return
 
-        # 4. Hold until 11:59:59 PM GST
-        await wait_for_exact_midnight()
+        # Hold until 23:59:58.8 GST
+        await wait_for_release_trigger()
 
-        # 5. Rapid Execution
-        booking_success = False
         try:
+            # 1. Open Booking Modal
             proceed_btn = page.locator("button:has-text('Proceed to booking')")
             await proceed_btn.wait_for(state="visible", timeout=5000)
             await proceed_btn.click()
 
-            print("Clicked proceed. Waiting directly for date dropdown...", flush=True)
+            # 2. Select Date (Native Playwright sub-10ms event wait)
             date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
             await date_dropdown.wait_for(state="visible", timeout=10000)
             await date_dropdown.click()
 
-            date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-            await date_items.last.wait_for(state="visible", timeout=10000)
+            date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
+            await date_target.wait_for(state="visible", timeout=10000)
+            await date_target.click()
 
-            selected_text = (await date_items.last.text_content()).strip()
-            print(f"Selected furthest available date: '{selected_text}'", flush=True)
-            await date_items.last.click()
-
-            time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
-            await time_dropdown.wait_for(state="visible", timeout=10000)
-            await time_dropdown.click()
-
-            # Log every visible slot so we see the full list in GitHub Actions
-            all_slot_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-            all_slots_text = [(await el.text_content()).strip() for el in await all_slot_items.all()]
-            print(f"All visible time slots tonight: {all_slots_text}", flush=True)
-
-            selected_slot_label = None
+            # 3. Fast Slot Execution with Instant Fallback
             for slot_code, slot_label in PREFERRED_SLOTS:
+                time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
+                await time_dropdown.wait_for(state="visible", timeout=5000)
+                await time_dropdown.click()
+
                 slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot_code}')")
                 if await slot_locator.count() > 0:
-                    selected_slot_label = slot_label
-                    print(f"Selecting slot: {slot_code} ({slot_label})...", flush=True)
+                    print(f"[{synced_now_gst():%H:%M:%S.%f}] Attempting slot: {slot_code} ({slot_label})", flush=True)
                     await slot_locator.first.click()
-                    break
 
-            if not selected_slot_label:
-                print(f"None of {[s[0] for s in PREFERRED_SLOTS]} available. Aborting booking.", flush=True)
-                await page.screenshot(path="booking_result_noslots.png")
-                await browser.close()
-                return
+                    book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
+                    await book_now_btn.wait_for(state="visible", timeout=5000)
+                    await book_now_btn.click()
 
-            # Confirm Booking
-            book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
-            await book_now_btn.wait_for(state="visible", timeout=10000)
-            await book_now_btn.click()
-            print(f"Clicked 'Book now' for {selected_slot_label}. Waiting for confirmation...", flush=True)
+                    # Check for server confirmation or error response
+                    combined_result = page.locator(
+                        "text=/booking confirmed|successfully booked|booking successful|already booked|no longer available|slot unavailable|failed|error/i"
+                    )
+                    try:
+                        await combined_result.first.wait_for(state="visible", timeout=3500)
 
-            # --- Explicit success/failure detection with dynamic UI wait ---
-            success_locator = page.locator(
-                "text=/booking confirmed|successfully booked|booking successful/i"
-            )
-            error_locator = page.locator(
-                "text=/already booked|no longer available|slot unavailable|failed|error/i"
-            )
+                        if await page.locator("text=/booking confirmed|successfully booked|booking successful/i").count() > 0:
+                            print(f"CONFIRMED: Successfully booked {slot_label}!", flush=True)
+                            break
+                        else:
+                            print(f"TAKEN: {slot_label} was taken. Immediately trying fallback slot...", flush=True)
+                    except Exception:
+                        print("No response within timeout, checking state...", flush=True)
 
-            try:
-                # Wait up to 10 seconds for either success or error banner to render
-                combined_result = page.locator(
-                    "text=/booking confirmed|successfully booked|booking successful|already booked|no longer available|slot unavailable|failed|error/i"
-                )
-                await combined_result.first.wait_for(state="visible", timeout=10000)
-
-                if await success_locator.count() > 0:
-                    booking_success = True
-                    msg = (await success_locator.first.text_content() or "").strip()
-                    print(f"CONFIRMED: {msg or 'success message detected'} — slot: {selected_slot_label}", flush=True)
-                elif await error_locator.count() > 0:
-                    msg = (await error_locator.first.text_content() or "").strip()
-                    print(f"FAILED: {msg or 'error message detected'} — slot: {selected_slot_label}", flush=True)
-            except Exception as e:
-                print("UNKNOWN / TIMEOUT: No explicit response text rendered within 10s.", flush=True)
-
-            # Give a 1-second margin for full toast/animation render before taking screenshot
             await page.wait_for_timeout(1000)
-
-            # Always capture final screenshot as evidence
-            try:
-                await page.screenshot(path="booking_result_final.png")
-            except Exception:
-                pass
+            await page.screenshot(path="booking_result_final.png")
 
         except Exception as e:
-            print(f"Execution failed during booking flow: {e}", flush=True)
+            print(f"Execution failed: {e}", flush=True)
 
         await browser.close()
 

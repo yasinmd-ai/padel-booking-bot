@@ -9,7 +9,6 @@ PASSWORD = os.getenv("DAMAC_PASSWORD")
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
-# Priority order: try 8-9 PM first tonight, then fall back to 7-8 PM.
 PREFERRED_SLOTS = [
     ("09:00 PM", "8:00 PM - 9:00 PM"),
     ("08:00 PM", "7:00 PM - 8:00 PM"),
@@ -52,22 +51,19 @@ async def sleep_until_pre_booking_time():
         await asyncio.sleep(wait_seconds)
 
 
-async def wait_for_release_trigger():
-    """Triggers at 23:59:58.8 GST (1.2s before midnight) to account for navigation load time."""
+async def wait_until_exact_time(target_seconds_before_midnight):
+    """Waits until a precise second offset relative to midnight GST."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:
         today_midnight += timedelta(days=1)
 
-    target_time = today_midnight - timedelta(seconds=1, milliseconds=200)  # 23:59:58.8 GST
+    target_time = today_midnight - timedelta(seconds=target_seconds_before_midnight)
     wait_seconds = (target_time - gst_now).total_seconds()
 
     if wait_seconds > 0:
-        print(f"[{gst_now:%H:%M:%S} GST] Ready. Waiting {wait_seconds:.2f}s until 23:59:58.8 GST...", flush=True)
         await asyncio.sleep(wait_seconds)
-
-    print(f"[{synced_now_gst():%H:%M:%S} GST] Triggering booking pipeline...", flush=True)
 
 
 async def main():
@@ -109,25 +105,28 @@ async def main():
             await browser.close()
             return
 
-        # Hold until 23:59:58.8 GST
-        await wait_for_release_trigger()
+        # Step A: Open Modal early at 23:59:50 GST
+        await wait_until_exact_time(10)
+        print(f"[{synced_now_gst():%H:%M:%S} GST] Opening booking modal early...", flush=True)
+        proceed_btn = page.locator("button:has-text('Proceed to booking')")
+        await proceed_btn.wait_for(state="visible", timeout=5000)
+        await proceed_btn.click()
 
+        # Step B: Select Date early at 23:59:53 GST
+        date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
+        await date_dropdown.wait_for(state="visible", timeout=10000)
+        await date_dropdown.click()
+
+        date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
+        await date_target.wait_for(state="visible", timeout=10000)
+        await date_target.click()
+        print(f"[{synced_now_gst():%H:%M:%S} GST] Target Date pre-selected. Standing by for midnight drop...", flush=True)
+
+        # Step C: Hold until exactly 23:59:59.8 GST (0.2s before midnight)
+        await wait_until_exact_time(0.2)
+
+        # Step D: Rapid Slot Execution right at Midnight
         try:
-            # 1. Open Booking Modal
-            proceed_btn = page.locator("button:has-text('Proceed to booking')")
-            await proceed_btn.wait_for(state="visible", timeout=5000)
-            await proceed_btn.click()
-
-            # 2. Select Date (Native Playwright sub-10ms event wait)
-            date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-            await date_dropdown.wait_for(state="visible", timeout=10000)
-            await date_dropdown.click()
-
-            date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
-            await date_target.wait_for(state="visible", timeout=10000)
-            await date_target.click()
-
-            # 3. Fast Slot Execution with Instant Fallback
             for slot_code, slot_label in PREFERRED_SLOTS:
                 time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
                 await time_dropdown.wait_for(state="visible", timeout=5000)
@@ -142,18 +141,17 @@ async def main():
                     await book_now_btn.wait_for(state="visible", timeout=5000)
                     await book_now_btn.click()
 
-                    # Check for server confirmation or error response
                     combined_result = page.locator(
                         "text=/booking confirmed|successfully booked|booking successful|already booked|no longer available|slot unavailable|failed|error/i"
                     )
                     try:
-                        await combined_result.first.wait_for(state="visible", timeout=3500)
+                        await combined_result.first.wait_for(state="visible", timeout=10000)
 
                         if await page.locator("text=/booking confirmed|successfully booked|booking successful/i").count() > 0:
                             print(f"CONFIRMED: Successfully booked {slot_label}!", flush=True)
                             break
                         else:
-                            print(f"TAKEN: {slot_label} was taken. Immediately trying fallback slot...", flush=True)
+                            print(f"TAKEN: {slot_label} was taken. Attempting fallback slot...", flush=True)
                     except Exception:
                         print("No response within timeout, checking state...", flush=True)
 

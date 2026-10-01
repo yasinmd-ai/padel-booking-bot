@@ -1,3 +1,15 @@
+That 2-second load time when clicking "Proceed to booking" is actually the most important piece of the puzzle.
+When you click "Proceed to booking", Damac's system sends a backend call to pull the dates and available slots. That network fetch takes 2 full seconds to come back from their server.
+What This Means for Tonight's Strategy
+If we click "Proceed to booking" after midnight, we lose 2 seconds just waiting for Damac's backend to reply. That is why other bots beat us—they don't wait for that page to load after midnight.
+To beat them, we need to kick off that 2-second load BEFORE midnight so the dates and time slots finish loading the exact millisecond 00:00:00 hits.
+The Winning Sequence
+ * 23:59:58 (2 seconds before midnight): The script clicks "Proceed to booking".
+ * 23:59:58 \rightarrow 00:00:00: Damac spends those 2 seconds loading the date and time options while the clock counts down.
+ * 00:00:00.0 (Midnight): The time slots finish rendering on screen right as they unlock on the server.
+ * 00:00:00.1: The script instantly selects the date, clicks 09:00 PM, and hits Book Now.
+Final Code (book_padel.py)
+Here is the code tuned to trigger "Proceed to booking" exactly 2.2 seconds before midnight so those 2 seconds of loading happen before the clock strikes 12:
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
@@ -52,7 +64,6 @@ async def sleep_until_pre_booking_time():
 
 
 async def wait_until_exact_time(target_seconds_before_midnight):
-    """Waits until a precise second offset relative to midnight GST."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -75,7 +86,7 @@ async def main():
         context = await browser.new_context()
         page = await context.new_page()
 
-        print("Navigating to Damac Living...", flush=True)
+        print("Navigating to Damac Living and logging in...", flush=True)
         try:
             await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_selector("#userName", timeout=20000)
@@ -98,35 +109,31 @@ async def main():
 
             next_btn = page.locator("button.button__primary:has-text('Next')")
             await next_btn.click()
-            print("Court selected. Holding at pre-booking screen...", flush=True)
+            print("Court selected. Standing by for pre-midnight trigger...", flush=True)
 
         except Exception as e:
             print(f"Setup failed: {e}", flush=True)
             await browser.close()
             return
 
-        # Step A: Open Modal early at 23:59:50 GST
-        await wait_until_exact_time(10)
-        print(f"[{synced_now_gst():%H:%M:%S} GST] Opening booking modal early...", flush=True)
+        # 1. Click "Proceed to booking" at 23:59:57.8 GST (2.2 seconds before midnight)
+        await wait_until_exact_time(2.2)
+        print(f"[{synced_now_gst():%H:%M:%S.%f}] Clicking Proceed to booking early to absorb the 2-second load time...", flush=True)
         proceed_btn = page.locator("button:has-text('Proceed to booking')")
         await proceed_btn.wait_for(state="visible", timeout=5000)
         await proceed_btn.click()
 
-        # Step B: Select Date early at 23:59:53 GST
-        date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-        await date_dropdown.wait_for(state="visible", timeout=10000)
-        await date_dropdown.click()
-
-        date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
-        await date_target.wait_for(state="visible", timeout=10000)
-        await date_target.click()
-        print(f"[{synced_now_gst():%H:%M:%S} GST] Target Date pre-selected. Standing by for midnight drop...", flush=True)
-
-        # Step C: Hold until exactly 23:59:59.8 GST (0.2s before midnight)
-        await wait_until_exact_time(0.2)
-
-        # Step D: Rapid Slot Execution right at Midnight
+        # 2. Select Date & Time immediately as midnight strikes
         try:
+            date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
+            await date_dropdown.wait_for(state="visible", timeout=10000)
+            await date_dropdown.click()
+
+            date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
+            await date_target.wait_for(state="visible", timeout=10000)
+            await date_target.click()
+
+            # 3. Fast Slot Execution
             for slot_code, slot_label in PREFERRED_SLOTS:
                 time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
                 await time_dropdown.wait_for(state="visible", timeout=5000)
@@ -139,13 +146,13 @@ async def main():
 
                     book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
                     await book_now_btn.wait_for(state="visible", timeout=5000)
-                    await book_now_btn.click()
+                    await book_now_btn.click(force=True)
 
                     combined_result = page.locator(
                         "text=/booking confirmed|successfully booked|booking successful|already booked|no longer available|slot unavailable|failed|error/i"
                     )
                     try:
-                        await combined_result.first.wait_for(state="visible", timeout=10000)
+                        await combined_result.first.wait_for(state="visible", timeout=5000)
 
                         if await page.locator("text=/booking confirmed|successfully booked|booking successful/i").count() > 0:
                             print(f"CONFIRMED: Successfully booked {slot_label}!", flush=True)
@@ -166,3 +173,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

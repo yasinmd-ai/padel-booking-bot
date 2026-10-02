@@ -83,6 +83,12 @@ async def extract_live_auth():
                 if k.lower() == "x-custom-identifier":
                     custom_identifier = v
 
+            # Intercept and inspect any API calls related to amenities
+            if "amenities" in req.url:
+                print(f"\n[PLAYWRIGHT INSPECT] Method: {req.method} | URL: {req.url}", flush=True)
+                if req.post_data:
+                    print(f"[PLAYWRIGHT INSPECT] Payload: {req.post_data}", flush=True)
+
         page.on("request", handle_request)
 
         await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
@@ -98,7 +104,8 @@ async def extract_live_auth():
         except Exception:
             await asyncio.sleep(5)
 
-        await asyncio.sleep(2)
+        # Give the dashboard a moment to load and fire initial calls
+        await asyncio.sleep(5)
         await browser.close()
 
         if bearer_token:
@@ -111,19 +118,17 @@ async def extract_live_auth():
 
 async def fetch_available_slots(session, headers, target_date):
     url = SLOTS_ENDPOINT_TEMPLATE.format(booking_date=target_date)
-    payload = {
+    params = {
         "account_id": ACCOUNT_ID,
         "amenity_id": AMENITY_ID,
         "booking_unit_id": UNIT_ID
     }
-    async with session.post(url, json=payload, headers=headers) as resp:
+    async with session.get(url, params=params, headers=headers) as resp:
         if resp.status == 200:
             data = await resp.json()
             slots = {}
             raw_items = data.get("data", [])
             print(f"[API] Retrieved {len(raw_items)} slot items from API.", flush=True)
-            if not raw_items:
-                print(f"[API] Raw response body (empty items list): {data}", flush=True)
             for item in raw_items:
                 slot_label = item.get("slot_time") or item.get("name")
                 slot_id = item.get("id") or item.get("amenity_slot_id")
@@ -133,8 +138,6 @@ async def fetch_available_slots(session, headers, target_date):
                     print(f" - Found Slot: '{slot_label}' | ID: {slot_id} | Available: {is_available}", flush=True)
                     if is_available:
                         slots[slot_label] = slot_id
-                else:
-                    print(f" - UNRECOGNIZED slot item shape, skipping: {item}", flush=True)
             return slots
         else:
             body = await resp.text()
@@ -161,9 +164,6 @@ async def fire_booking(session, headers, target_date, slot_id, label):
             text = await resp.text()
             print(f"[{synced_now_gst():%H:%M:%S.%f}] SERVER RESPONSE ({label}) [{resp.status}]: {text}", flush=True)
             return resp.status, text
-    except asyncio.TimeoutError:
-        print(f"[{synced_now_gst():%H:%M:%S.%f}] TIMEOUT waiting for response on {label} -- status UNKNOWN, check manually before retrying.", flush=True)
-        return "TIMEOUT", "request timed out, booking status unknown"
     except Exception as e:
         print(f"Failed to submit booking for {label}: {e}", flush=True)
         return None, str(e)
@@ -185,13 +185,7 @@ async def book_with_fallback(session, headers, target_date, slots_map):
             print(f"SUCCESS: Successfully booked {label} for {target_date}!", flush=True)
             return
 
-        if status == "TIMEOUT":
-            print(f"Stopping after timeout on {label}. Verify manually whether this booking actually went through before the next run.", flush=True)
-            return
-
-        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot if any remain...", flush=True)
-
-    print("Exhausted all available preferred slots -- none succeeded.", flush=True)
+        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot...", flush=True)
 
 
 async def main():
@@ -225,7 +219,6 @@ async def main():
         for attempt in range(20):
             slots_map = await fetch_available_slots(session, headers, target_date)
             if slots_map:
-                print(f"[{synced_now_gst():%H:%M:%S.%f}] Successfully fetched slots on attempt {attempt + 1}.", flush=True)
                 break
             await asyncio.sleep(0.15)
 

@@ -66,7 +66,7 @@ async def sleep_until_midnight():
 
 
 async def extract_live_auth():
-    print("Pre-fetching live auth headers and sniffing slots endpoint via Playwright...", flush=True)
+    print("Pre-fetching live auth headers and sniffing all API requests via Playwright...", flush=True)
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
@@ -83,8 +83,8 @@ async def extract_live_auth():
                 if k.lower() == "x-custom-identifier":
                     custom_identifier = v
 
-            # Sniff any API request going to amenities or booking endpoints
-            if "amenities" in req.url or "slots" in req.url:
+            # Sniff ANY API call to damacliving backend
+            if "api.damacliving.com" in req.url:
                 print(f"\n[SNIFFED API] Method: {req.method} | URL: {req.url}", flush=True)
                 if req.post_data:
                     print(f"[SNIFFED PAYLOAD]: {req.post_data}", flush=True)
@@ -105,23 +105,22 @@ async def extract_live_auth():
         except Exception:
             await asyncio.sleep(5)
 
-        # 2. Navigate to amenities section to trigger real slot API calls
-        print("Logged in. Navigating to amenities/booking section to sniff real requests...", flush=True)
-        await asyncio.sleep(3)
+        # 2. Give dashboard time to load initial calls, then navigate to amenities
+        print("Logged in. Navigating to portal pages to trigger API calls...", flush=True)
+        await asyncio.sleep(4)
         
         try:
-            # Attempt to click through to amenities if visible on dashboard
             await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=15000)
-            await asyncio.sleep(5)
+            await asyncio.sleep(6)
         except Exception as e:
-            print(f"Navigation to amenities page note: {e}", flush=True)
+            print(f"Navigation note: {e}", flush=True)
 
         await browser.close()
 
         if bearer_token:
-            print("Auth headers extracted successfully.", flush=True)
+            print("\nAuth headers extracted successfully.", flush=True)
         else:
-            print("CRITICAL: Failed to retrieve Bearer token.", flush=True)
+            print("\nCRITICAL: Failed to retrieve Bearer token.", flush=True)
 
         return bearer_token, custom_identifier
 

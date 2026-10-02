@@ -8,11 +8,6 @@ USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
-AMENITY_ID = "a5Y07000000wqfhEAA"
-UNIT_ID = "a0x07000008cDwoAAE"
-ACCOUNT_ID = "0010700000gYVSsAAO"
-STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
-
 PREFERRED_SLOTS = [
     "08:00 PM - 09:00 PM",
     "07:00 PM - 08:00 PM",
@@ -42,104 +37,97 @@ def synced_now_gst():
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
-async def extract_live_auth_and_slots(target_date):
-    print("Sniffing live auth headers and real slot API request via Playwright...", flush=True)
+async def run_full_booking():
+    await sync_server_time()
+    
+    days_out = 2 if IS_TEST_MODE else 14
+    target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
+    print(f"Target booking date: {target_date} (Test mode: {IS_TEST_MODE})", flush=True)
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
+        browser = await p.chromium.launch(headless=True, args=["--start-maximized"])
+        context = await browser.new_context(viewport={"width": 1280, "height": 800})
         page = await context.new_page()
 
-        bearer_token = None
-        custom_identifier = None
-        sniffed_slots_data = {}
-
-        def handle_request(req):
-            nonlocal bearer_token, custom_identifier
-            for k, v in req.headers.items():
-                if k.lower() == "authorization" and "Bearer" in v:
-                    bearer_token = v
-                if k.lower() == "x-custom-identifier":
-                    custom_identifier = v
-
-            if "damacliving.com/damacliving/api/v1/" in req.url:
-                print(f"[SNIFFED API] {req.method} | {req.url}", flush=True)
-                if req.post_data:
-                    print(f"   Payload: {req.post_data}", flush=True)
-
-        async def handle_response(response):
-            nonlocal sniffed_slots_data
-            if "amenities" in response.url and response.status == 200:
-                try:
-                    body = await response.json()
-                    if isinstance(body, dict) and "data" in body:
-                        items = body.get("data", [])
-                        if isinstance(items, list) and len(items) > 0:
-                            print(f"\n[CAPTURED SLOTS API RESPONSE from {response.url}]", flush=True)
-                            for item in items:
-                                slot_label = item.get("slot_time") or item.get("name")
-                                slot_id = item.get("id") or item.get("amenity_slot_id")
-                                is_available = item.get("is_available", True)
-                                if slot_label and slot_id and is_available:
-                                    sniffed_slots_data[slot_label] = slot_id
-                except Exception:
-                    pass
-
-        page.on("request", handle_request)
-        page.on("response", handle_response)
-
-        # 1. Login
-        await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_selector("#userName", timeout=20000)
-        await page.fill("#userName", USERNAME)
-        await page.fill("input[type='password']", PASSWORD)
-
         try:
+            # 1. Login
+            print("Opening portal and logging in...", flush=True)
+            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_selector("#userName", timeout=20000)
+            await page.fill("#userName", USERNAME)
+            await page.fill("input[type='password']", PASSWORD)
+
             await asyncio.gather(
                 page.wait_for_load_state("domcontentloaded", timeout=20000),
                 page.click("button.button__primary:has-text('Sign in')")
             )
-        except Exception:
             await asyncio.sleep(5)
 
-        print("Logged in. Navigating to amenities...", flush=True)
-        await asyncio.sleep(3)
+            # 2. Navigate to Amenities via Menu
+            print("Navigating to Amenities...", flush=True)
+            for selector in ["text=Amenities", "a:has-text('Amenities')", "[routerLink*='amenities']"]:
+                try:
+                    elem = page.locator(selector).first
+                    if await elem.count() > 0:
+                        await elem.click()
+                        await asyncio.sleep(5)
+                        break
+                except Exception:
+                    continue
 
-        # 2. Go to amenities using domcontentloaded to prevent background polling timeouts
-        await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(6)
+            # 3. Select Padel Court Card
+            print("Selecting Padel court...", flush=True)
+            for selector in ["text=Paddle", "text=Padel", "text=D2 Sports Town", ".amenity-card"]:
+                try:
+                    elem = page.locator(selector).first
+                    if await elem.count() > 0:
+                        await elem.click()
+                        await asyncio.sleep(5)
+                        break
+                except Exception:
+                    continue
 
-        # Try multiple variations to find the Padel/Paddle card
-        for selector in ["text=Paddle", "text=Padel", "text=D2 Sports Town", f"text={AMENITY_ID}", "[routerLink*='amenities']", ".amenity-card"]:
+            # 4. Select Target Date
+            print(f"Selecting date {target_date}...", flush=True)
             try:
-                elem = page.locator(selector).first
-                if await elem.count() > 0:
-                    print(f"Found element with selector '{selector}', clicking...", flush=True)
-                    await elem.click()
-                    await asyncio.sleep(6)
-                    break
-            except Exception:
-                continue
+                date_elem = page.locator(f"[data-date='{target_date}'], text='{target_date}'").first
+                if await date_elem.count() > 0:
+                    await date_elem.click()
+                    await asyncio.sleep(3)
+            except Exception as e:
+                print(f"Date selection note: {e}")
 
-        await browser.close()
-        return bearer_token, custom_identifier, sniffed_slots_data
+            # 5. Select Time Slot and Book
+            print("Searching for available evening slots...", flush=True)
+            booked = False
+            for slot_label in PREFERRED_SLOTS:
+                try:
+                    slot_btn = page.locator(f"text='{slot_label}'").first
+                    if await slot_btn.count() > 0:
+                        print(f"Found slot {slot_label}! Clicking...", flush=True)
+                        await slot_btn.click()
+                        await asyncio.sleep(2)
+                        
+                        # Click Confirm / Book
+                        confirm_btn = page.locator("button:has-text('Book'), button:has-text('Confirm'), button:has-text('Proceed')").first
+                        if await confirm_btn.count() > 0:
+                            print("Clicking final book/confirm button...", flush=True)
+                            await confirm_btn.click()
+                            await asyncio.sleep(5)
+                            print("SUCCESS: Padel court booked successfully!")
+                            booked = True
+                            break
+                except Exception as ex:
+                    print(f"Slot {slot_label} attempt note: {ex}")
 
+            if not booked:
+                print("Could not find or book any preferred slots.")
 
-async def main():
-    await sync_server_time()
-
-    days_out = 2 if IS_TEST_MODE else 14
-    target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
-    print(f"Targeting booking date: {target_date}", flush=True)
-
-    bearer_token, custom_identifier, sniffed_slots = await extract_live_auth_and_slots(target_date)
-
-    if sniffed_slots:
-        print("\nSuccessfully captured slots via browser interaction:", flush=True)
-        for label, sid in sniffed_slots.items():
-            print(f" - {label} : {sid}", flush=True)
-    else:
-        print("\nNo slots captured automatically from browser UI. Let's check sniffed API routes above.", flush=True)
+        except Exception as e:
+            print(f"An error occurred during booking: {e}")
+        finally:
+            await browser.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_full_booking())

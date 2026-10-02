@@ -15,6 +15,8 @@ ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
 SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amenity-id={AMENITY_ID}&bookingunit-id={UNIT_ID}"
+
+# Hardcoded static token to avoid GitHub Actions secret dependency
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
 PREFERRED_SLOTS = [
@@ -116,6 +118,8 @@ async def fetch_available_slots(session, headers, target_date):
             slots = {}
             raw_items = data.get("data", [])
             print(f"[API] Retrieved {len(raw_items)} slot items from API.", flush=True)
+            if not raw_items:
+                print(f"[API] Raw response body (empty items list): {data}", flush=True)
             for item in raw_items:
                 slot_label = item.get("slot_time") or item.get("name")
                 slot_id = item.get("id") or item.get("amenity_slot_id")
@@ -125,7 +129,12 @@ async def fetch_available_slots(session, headers, target_date):
                     print(f" - Found Slot: '{slot_label}' | ID: {slot_id} | Available: {is_available}", flush=True)
                     if is_available:
                         slots[slot_label] = slot_id
+                else:
+                    print(f" - UNRECOGNIZED slot item shape, skipping: {item}", flush=True)
             return slots
+        else:
+            body = await resp.text()
+            print(f"[API] Non-200 response fetching slots: status={resp.status}, body={body}", flush=True)
     return {}
 
 
@@ -149,7 +158,7 @@ async def fire_booking(session, headers, target_date, slot_id, label):
             print(f"[{synced_now_gst():%H:%M:%S.%f}] SERVER RESPONSE ({label}) [{resp.status}]: {text}", flush=True)
             return resp.status, text
     except asyncio.TimeoutError:
-        print(f"[{synced_now_gst():%H:%M:%S.%f}] TIMEOUT waiting for response on {label} -- status UNKNOWN, check manually.", flush=True)
+        print(f"[{synced_now_gst():%H:%M:%S.%f}] TIMEOUT waiting for response on {label} -- status UNKNOWN, check manually before retrying.", flush=True)
         return "TIMEOUT", "request timed out, booking status unknown"
     except Exception as e:
         print(f"Failed to submit booking for {label}: {e}", flush=True)
@@ -173,10 +182,10 @@ async def book_with_fallback(session, headers, target_date, slots_map):
             return
 
         if status == "TIMEOUT":
-            print(f"Stopping after timeout on {label}. Verify manually.", flush=True)
+            print(f"Stopping after timeout on {label}. Verify manually whether this booking actually went through before the next run.", flush=True)
             return
 
-        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot...", flush=True)
+        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot if any remain...", flush=True)
 
     print("Exhausted all available preferred slots -- none succeeded.", flush=True)
 

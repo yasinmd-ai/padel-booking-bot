@@ -8,14 +8,9 @@ USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
-# Identifiers
-AMENITY_ID = "a5Y07000000wqfhEAA"      # D2 Sports Town - Paddle Court 1
-UNIT_ID = "a0x07000008cDwoAAE"          # Booking Unit ID
-ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
-
-REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
-SLOTS_ENDPOINT_TEMPLATE = "https://api.damacliving.com/damacliving/api/v1/amenities/{booking_date}"
-
+AMENITY_ID = "a5Y07000000wqfhEAA"
+UNIT_ID = "a0x07000008cDwoAAE"
+ACCOUNT_ID = "0010700000gYVSsAAO"
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
 PREFERRED_SLOTS = [
@@ -47,33 +42,17 @@ def synced_now_gst():
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
-async def sleep_until_midnight():
-    if IS_TEST_MODE:
-        print("[TEST MODE] Skipping midnight sleep delay. Running immediately...", flush=True)
-        return
-
-    gst_now = synced_now_gst()
-
-    if gst_now.hour >= 23:
-        target_midnight = (gst_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    else:
-        target_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    wait_seconds = (target_midnight - gst_now).total_seconds()
-    if wait_seconds > 0:
-        print(f"[{gst_now:%H:%M:%S} GST] Waiting {wait_seconds:.2f}s until 00:00:00 GST...", flush=True)
-        await asyncio.sleep(wait_seconds)
-
-
-async def extract_live_auth():
-    print("Pre-fetching live auth headers and sniffing all API requests via Playwright...", flush=True)
+async def extract_live_auth_and_slots(target_date):
+    print("Sniffing live auth headers and real slot API request via Playwright...", flush=True)
     async with async_playwright() as p:
+        # Run non-headless so you can see what it's clicking if needed, or keep headless=True
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
 
         bearer_token = None
         custom_identifier = None
+        sniffed_slots_data = {}
 
         def handle_request(req):
             nonlocal bearer_token, custom_identifier
@@ -83,13 +62,31 @@ async def extract_live_auth():
                 if k.lower() == "x-custom-identifier":
                     custom_identifier = v
 
-            # Sniff ANY API call to damacliving backend
-            if "api.damacliving.com" in req.url:
-                print(f"\n[SNIFFED API] Method: {req.method} | URL: {req.url}", flush=True)
+            if "damacliving.com/damacliving/api/v1/" in req.url:
+                print(f"[SNIFFED API] {req.method} | {req.url}", flush=True)
                 if req.post_data:
-                    print(f"[SNIFFED PAYLOAD]: {req.post_data}", flush=True)
+                    print(f"   Payload: {req.post_data}", flush=True)
+
+        async def handle_response(response):
+            nonlocal sniffed_slots_data
+            if "amenities" in response.url and response.status == 200:
+                try:
+                    body = await response.json()
+                    if isinstance(body, dict) and "data" in body:
+                        items = body.get("data", [])
+                        if isinstance(items, list) and len(items) > 0:
+                            print(f"\n[CAPTURED SLOTS API RESPONSE from {response.url}]", flush=True)
+                            for item in items:
+                                slot_label = item.get("slot_time") or item.get("name")
+                                slot_id = item.get("id") or item.get("amenity_slot_id")
+                                is_available = item.get("is_available", True)
+                                if slot_label and slot_id and is_available:
+                                    sniffed_slots_data[slot_label] = slot_id
+                except Exception:
+                    pass
 
         page.on("request", handle_request)
+        page.on("response", handle_response)
 
         # 1. Login
         await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
@@ -105,133 +102,42 @@ async def extract_live_auth():
         except Exception:
             await asyncio.sleep(5)
 
-        # 2. Give dashboard time to load initial calls, then navigate to amenities
-        print("Logged in. Navigating to portal pages to trigger API calls...", flush=True)
-        await asyncio.sleep(4)
-        
+        print("Logged in. Navigating to amenities...", flush=True)
+        await asyncio.sleep(3)
+
+        # 2. Go to amenities and interact to trigger the exact slot query
+        await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=15000)
+        await asyncio.sleep(5)
+
+        # Try to click on Paddle / Padel court if visible
         try:
-            await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=15000)
-            await asyncio.sleep(6)
+            padel_card = page.locator("text=Paddle").first
+            if await padel_card.count() > 0:
+                print("Found Padel court in UI, clicking...", flush=True)
+                await padel_card.click()
+                await asyncio.sleep(5)
         except Exception as e:
-            print(f"Navigation note: {e}", flush=True)
+            print(f"UI interaction note: {e}", flush=True)
 
         await browser.close()
-
-        if bearer_token:
-            print("\nAuth headers extracted successfully.", flush=True)
-        else:
-            print("\nCRITICAL: Failed to retrieve Bearer token.", flush=True)
-
-        return bearer_token, custom_identifier
-
-
-async def fetch_available_slots(session, headers, target_date):
-    url = SLOTS_ENDPOINT_TEMPLATE.format(booking_date=target_date)
-    payload = {
-        "account_id": ACCOUNT_ID,
-        "amenity_id": AMENITY_ID,
-        "booking_unit_id": UNIT_ID
-    }
-    async with session.post(url, json=payload, headers=headers) as resp:
-        if resp.status == 200:
-            data = await resp.json()
-            slots = {}
-            raw_items = data.get("data", [])
-            print(f"[API] Retrieved {len(raw_items)} slot items from API.", flush=True)
-            for item in raw_items:
-                slot_label = item.get("slot_time") or item.get("name")
-                slot_id = item.get("id") or item.get("amenity_slot_id")
-                is_available = item.get("is_available", True)
-
-                if slot_label and slot_id:
-                    print(f" - Found Slot: '{slot_label}' | ID: {slot_id} | Available: {is_available}", flush=True)
-                    if is_available:
-                        slots[slot_label] = slot_id
-            return slots
-        else:
-            body = await resp.text()
-            print(f"[API] Non-200 response fetching slots: status={resp.status}, body={body}", flush=True)
-    return {}
-
-
-async def fire_booking(session, headers, target_date, slot_id, label):
-    payload = {
-        "account_id": ACCOUNT_ID,
-        "amenity_id": AMENITY_ID,
-        "amenity_slot_id": slot_id,
-        "booking_date": target_date,
-        "booking_unit_id": UNIT_ID,
-        "comments": "",
-        "fm_case_id": "",
-        "no_of_guest": None,
-        "origin": "Portal",
-    }
-
-    print(f"[{synced_now_gst():%H:%M:%S.%f}] DISPATCHING API BOOKING for {label} (Slot ID: {slot_id})...", flush=True)
-    try:
-        async with session.post(REGISTRATION_ENDPOINT, json=payload, headers=headers, timeout=5) as resp:
-            text = await resp.text()
-            print(f"[{synced_now_gst():%H:%M:%S.%f}] SERVER RESPONSE ({label}) [{resp.status}]: {text}", flush=True)
-            return resp.status, text
-    except Exception as e:
-        print(f"Failed to submit booking for {label}: {e}", flush=True)
-        return None, str(e)
-
-
-async def book_with_fallback(session, headers, target_date, slots_map):
-    available_preferred = [
-        (label, slots_map[label]) for label in PREFERRED_SLOTS if label in slots_map
-    ]
-
-    if not available_preferred:
-        print(f"No preferred target slots available for {target_date}.", flush=True)
-        return
-
-    for label, slot_id in available_preferred:
-        status, response = await fire_booking(session, headers, target_date, slot_id, label)
-
-        if status in (200, 201):
-            print(f"SUCCESS: Successfully booked {label} for {target_date}!", flush=True)
-            return
-
-        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot...", flush=True)
+        return bearer_token, custom_identifier, sniffed_slots_data
 
 
 async def main():
     await sync_server_time()
 
-    bearer_token, custom_identifier = await extract_live_auth()
-    if not bearer_token:
-        return
-
-    headers = {
-        "accept": "application/json, text/plain, */*",
-        "accept-language": "en",
-        "api-token": STATIC_API_TOKEN,
-        "authorization": bearer_token,
-        "content-type": "application/json",
-        "origin": "https://www.damacliving.com",
-        "referer": "https://www.damacliving.com/",
-        "user-agent": "Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
-        "x-custom-identifier": custom_identifier or "f92ce3684667d4627201f81479ed7162",
-    }
-
-    await sleep_until_midnight()
-
     days_out = 2 if IS_TEST_MODE else 14
     target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
-
     print(f"Targeting booking date: {target_date}", flush=True)
 
-    async with aiohttp.ClientSession() as session:
-        slots_map = {}
-        for attempt in range(20):
-            slots_map = await fetch_available_slots(session, headers, target_date)
-            if slots_map:
-                break
-            await asyncio.sleep(0.15)
+    bearer_token, custom_identifier, sniffed_slots = await extracellular_auth if False else await extract_live_auth_and_slots(target_date)
 
-        await book_with_fallback(session, headers, target_date, slots_map)
+    if sniffed_slots:
+        print("\nSuccessfully captured slots via browser interaction:", flush=True)
+        for label, sid in sniffed_slots.items():
+            print(f" - {label} : {sid}", flush=True)
+    else:
+        print("\nNo slots captured automatically from browser UI. Let's check sniffed API routes above.", flush=True)
 
 
 if __name__ == "__main__":

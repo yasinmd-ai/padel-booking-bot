@@ -50,7 +50,6 @@ async def sleep_until_midnight():
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
 
-    # If running within 15 minutes after midnight, execute immediately
     if gst_now < today_midnight + timedelta(minutes=15):
         return
 
@@ -72,12 +71,11 @@ async def extract_live_auth():
 
         def handle_request(req):
             nonlocal bearer_token, custom_identifier
-            auth = req.headers.get("authorization")
-            cid = req.headers.get("x-custom-identifier")
-            if auth and "Bearer" in auth:
-                bearer_token = auth
-            if cid:
-                custom_identifier = cid
+            for k, v in req.headers.items():
+                if k.lower() == "authorization" and "Bearer" in v:
+                    bearer_token = v
+                if k.lower() == "x-custom-identifier":
+                    custom_identifier = v
 
         page.on("request", handle_request)
 
@@ -85,11 +83,24 @@ async def extract_live_auth():
         await page.wait_for_selector("#userName", timeout=20000)
         await page.fill("#userName", USERNAME)
         await page.fill("input[type='password']", PASSWORD)
-        await page.click("button.button__primary:has-text('Sign in')")
-        await page.wait_for_timeout(4000)
 
+        try:
+            await asyncio.gather(
+                page.wait_for_load_state("networkidle", timeout=20000),
+                page.click("button.button__primary:has-text('Sign in')")
+            )
+        except Exception:
+            # Fallback sleep if networkidle timeout triggers after redirection
+            await asyncio.sleep(5)
+
+        await asyncio.sleep(2)
         await browser.close()
-        print("Auth headers extracted successfully.", flush=True)
+
+        if bearer_token:
+            print("Auth headers extracted successfully.", flush=True)
+        else:
+            print("CRITICAL: Failed to retrieve Bearer token.", flush=True)
+
         return bearer_token, custom_identifier
 
 
@@ -137,7 +148,6 @@ async def main():
 
     bearer_token, custom_identifier = await extract_live_auth()
     if not bearer_token:
-        print("CRITICAL: Failed to retrieve Bearer token.", flush=True)
         return
 
     headers = {
@@ -152,18 +162,14 @@ async def main():
         "x-custom-identifier": custom_identifier or "f92ce3684667d4627201f81479ed7162",
     }
 
-    # Wait until midnight GST for scheduled runs (skipped during manual tests)
     await sleep_until_midnight()
 
-    # For manual testing during the day, look at an unlocked date (e.g., 2 days out)
-    # For scheduled nightly runs at 00:00 GST, targets the freshly unlocked 14-day window
     days_out = 2 if IS_TEST_MODE else 14
     target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
 
     print(f"Targeting booking date: {target_date}", flush=True)
 
     async with aiohttp.ClientSession() as session:
-        # Retry fetching slots up to 10 times (5 seconds)
         slots_map = {}
         for attempt in range(10):
             slots_map = await fetch_available_slots(session, headers, target_date)

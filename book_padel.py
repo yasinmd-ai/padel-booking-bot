@@ -1,15 +1,3 @@
-That 2-second load time when clicking "Proceed to booking" is actually the most important piece of the puzzle.
-When you click "Proceed to booking", Damac's system sends a backend call to pull the dates and available slots. That network fetch takes 2 full seconds to come back from their server.
-What This Means for Tonight's Strategy
-If we click "Proceed to booking" after midnight, we lose 2 seconds just waiting for Damac's backend to reply. That is why other bots beat us—they don't wait for that page to load after midnight.
-To beat them, we need to kick off that 2-second load BEFORE midnight so the dates and time slots finish loading the exact millisecond 00:00:00 hits.
-The Winning Sequence
- * 23:59:58 (2 seconds before midnight): The script clicks "Proceed to booking".
- * 23:59:58 \rightarrow 00:00:00: Damac spends those 2 seconds loading the date and time options while the clock counts down.
- * 00:00:00.0 (Midnight): The time slots finish rendering on screen right as they unlock on the server.
- * 00:00:00.1: The script instantly selects the date, clicks 09:00 PM, and hits Book Now.
-Final Code (book_padel.py)
-Here is the code tuned to trigger "Proceed to booking" exactly 2.2 seconds before midnight so those 2 seconds of loading happen before the clock strikes 12:
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
@@ -19,12 +7,16 @@ import aiohttp
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
 
-DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
+# Identifiers
+AMENITY_ID = "a5Y07000000wqfhEAA"      # D2 Sports Town - Paddle Court 1
+UNIT_ID = "a0x0700008cDwoAAE"         # Booking Unit ID
+ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
-PREFERRED_SLOTS = [
-    ("09:00 PM", "8:00 PM - 9:00 PM"),
-    ("08:00 PM", "7:00 PM - 8:00 PM"),
-]
+REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
+SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amentiy-id={AMENITY_ID}&bookingUnit-id={UNIT_ID}"
+STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
+
+PREFERRED_SLOTS = ["08:00 PM - 09:00 PM", "07:00 PM - 08:00 PM"]
 
 CLOCK_OFFSET = timedelta(0)
 
@@ -41,14 +33,14 @@ async def sync_server_time():
                     CLOCK_OFFSET = server_time - local_time
                     print(f"[SYNC] Server clock offset: {CLOCK_OFFSET.total_seconds():.2f}s", flush=True)
     except Exception as e:
-        print(f"[SYNC] Time sync failed ({e}), proceeding with local clock.", flush=True)
+        print(f"[SYNC] Time sync failed ({e}), using local clock.", flush=True)
 
 
 def synced_now_gst():
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
-async def sleep_until_pre_booking_time():
+async def sleep_until_pre_booking():
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
@@ -59,118 +51,130 @@ async def sleep_until_pre_booking_time():
     target_pre_time = next_midnight - timedelta(minutes=2)
     if gst_now < target_pre_time:
         wait_seconds = (target_pre_time - gst_now).total_seconds()
-        print(f"[{gst_now:%H:%M:%S} GST] Sleeping {wait_seconds:.2f}s until pre-booking window...", flush=True)
+        print(f"[{gst_now:%H:%M:%S} GST] Waiting {wait_seconds:.2f}s until 11:58 PM GST...", flush=True)
         await asyncio.sleep(wait_seconds)
 
 
-async def wait_until_exact_time(target_seconds_before_midnight):
-    gst_now = synced_now_gst()
-    today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:
-        today_midnight += timedelta(days=1)
-
-    target_time = today_midnight - timedelta(seconds=target_seconds_before_midnight)
-    wait_seconds = (target_time - gst_now).total_seconds()
-
-    if wait_seconds > 0:
-        await asyncio.sleep(wait_seconds)
-
-
-async def main():
-    await sync_server_time()
-    await sleep_until_pre_booking_time()
-
+async def extract_live_auth():
+    print("Pre-fetching live auth headers via Playwright...", flush=True)
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
 
-        print("Navigating to Damac Living and logging in...", flush=True)
-        try:
-            await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_selector("#userName", timeout=20000)
-            await page.fill("#userName", USERNAME)
-            await page.fill("input[type='password']", PASSWORD)
-            await page.click("button.button__primary:has-text('Sign in')")
-            await page.wait_for_timeout(4000)
-            print("Logged in successfully.", flush=True)
+        bearer_token = None
+        custom_identifier = None
 
-            print("Navigating to Amenity Page...", flush=True)
-            await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
+        def handle_request(req):
+            nonlocal bearer_token, custom_identifier
+            auth = req.headers.get("authorization")
+            cid = req.headers.get("x-custom-identifier")
+            if auth and "Bearer" in auth:
+                bearer_token = auth
+            if cid:
+                custom_identifier = cid
 
-            new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
-            await new_booking_btn.wait_for(state="visible", timeout=30000)
-            await new_booking_btn.click()
+        page.on("request", handle_request)
 
-            await page.wait_for_selector(".modal-body", timeout=15000)
-            court_option = page.locator(".modal-body").get_by_text("D2 Sports Town - Paddle Court 1", exact=True)
-            await court_option.click(force=True)
-
-            next_btn = page.locator("button.button__primary:has-text('Next')")
-            await next_btn.click()
-            print("Court selected. Standing by for pre-midnight trigger...", flush=True)
-
-        except Exception as e:
-            print(f"Setup failed: {e}", flush=True)
-            await browser.close()
-            return
-
-        # 1. Click "Proceed to booking" at 23:59:57.8 GST (2.2 seconds before midnight)
-        await wait_until_exact_time(2.2)
-        print(f"[{synced_now_gst():%H:%M:%S.%f}] Clicking Proceed to booking early to absorb the 2-second load time...", flush=True)
-        proceed_btn = page.locator("button:has-text('Proceed to booking')")
-        await proceed_btn.wait_for(state="visible", timeout=5000)
-        await proceed_btn.click()
-
-        # 2. Select Date & Time immediately as midnight strikes
-        try:
-            date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-            await date_dropdown.wait_for(state="visible", timeout=10000)
-            await date_dropdown.click()
-
-            date_target = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").last
-            await date_target.wait_for(state="visible", timeout=10000)
-            await date_target.click()
-
-            # 3. Fast Slot Execution
-            for slot_code, slot_label in PREFERRED_SLOTS:
-                time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
-                await time_dropdown.wait_for(state="visible", timeout=5000)
-                await time_dropdown.click()
-
-                slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot_code}')")
-                if await slot_locator.count() > 0:
-                    print(f"[{synced_now_gst():%H:%M:%S.%f}] Attempting slot: {slot_code} ({slot_label})", flush=True)
-                    await slot_locator.first.click()
-
-                    book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
-                    await book_now_btn.wait_for(state="visible", timeout=5000)
-                    await book_now_btn.click(force=True)
-
-                    combined_result = page.locator(
-                        "text=/booking confirmed|successfully booked|booking successful|already booked|no longer available|slot unavailable|failed|error/i"
-                    )
-                    try:
-                        await combined_result.first.wait_for(state="visible", timeout=5000)
-
-                        if await page.locator("text=/booking confirmed|successfully booked|booking successful/i").count() > 0:
-                            print(f"CONFIRMED: Successfully booked {slot_label}!", flush=True)
-                            break
-                        else:
-                            print(f"TAKEN: {slot_label} was taken. Attempting fallback slot...", flush=True)
-                    except Exception:
-                        print("No response within timeout, checking state...", flush=True)
-
-            await page.wait_for_timeout(1000)
-            await page.screenshot(path="booking_result_final.png")
-
-        except Exception as e:
-            print(f"Execution failed: {e}", flush=True)
+        await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_selector("#userName", timeout=20000)
+        await page.fill("#userName", USERNAME)
+        await page.fill("input[type='password']", PASSWORD)
+        await page.click("button.button__primary:has-text('Sign in')")
+        await page.wait_for_timeout(4000)
 
         await browser.close()
+        print("Auth headers extracted successfully.", flush=True)
+        return bearer_token, custom_identifier
+
+
+async def fetch_available_slots(session, headers, target_date):
+    url = SLOTS_ENDPOINT_TEMPLATE.format(booking_date=target_date)
+    async with session.get(url, headers=headers) as resp:
+        if resp.status == 200:
+            data = await resp.json()
+            # Map slot labels to their amenity_slot_id
+            slots = {}
+            for item in data.get("data", []):
+                slot_label = item.get("slot_time") or item.get("name")
+                slot_id = item.get("id") or item.get("amenity_slot_id")
+                if slot_label and slot_id:
+                    slots[slot_label] = slot_id
+            return slots
+    return {}
+
+
+async def fire_booking(session, headers, target_date, slot_id, label):
+    payload = {
+        "account_id": ACCOUNT_ID,
+        "amenity_id": AMENITY_ID,
+        "amenity_slot_id": slot_id,
+        "booking_date": target_date,
+        "booking_unit_id": UNIT_ID,
+        "comments": "",
+        "fm_case_id": "",
+        "no_of_guest": None,
+        "origin": "Portal",
+    }
+
+    print(f"[{synced_now_gst():%H:%M:%S.%f}] DISPATCHING API BOOKING for {label} (Slot ID: {slot_id})...", flush=True)
+    try:
+        async with session.post(REGISTRATION_ENDPOINT, json=payload, headers=headers, timeout=5) as resp:
+            text = await resp.text()
+            print(f"[{synced_now_gst():%H:%M:%S.%f}] SERVER RESPONSE ({label}) [{resp.status}]: {text}", flush=True)
+            return resp.status, text
+    except Exception as e:
+        print(f"Failed to submit booking for {label}: {e}", flush=True)
+        return None, str(e)
+
+
+async def main():
+    await sync_server_time()
+    await sleep_until_pre_booking()
+
+    bearer_token, custom_identifier = await extract_live_auth()
+    if not bearer_token:
+        print("CRITICAL: Failed to retrieve Bearer token.", flush=True)
+        return
+
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "en",
+        "api-token": STATIC_API_TOKEN,
+        "authorization": bearer_token,
+        "content-type": "application/json",
+        "origin": "https://www.damacliving.com",
+        "referer": "https://www.damacliving.com/",
+        "user-agent": "Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
+        "x-custom-identifier": custom_identifier or "f92ce3684667d4627201f81479ed7162",
+    }
+
+    # Furthest unlocked target date (2 weeks out / 14 days)
+    target_date = (synced_now_gst() + timedelta(days=14)).strftime("%Y-%m-%d")
+
+    async with aiohttp.ClientSession() as session:
+        # 1. Fetch available slot IDs right at 11:59:58 PM GST
+        slots_map = await fetch_available_slots(session, headers, target_date)
+        
+        # 2. Hold until 00:00:00.000 GST
+        gst_now = synced_now_gst()
+        midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        wait_seconds = (midnight - gst_now).total_seconds() - 0.05
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+
+        # 3. Fire requests concurrently
+        tasks = []
+        for slot_label in PREFERRED_SLOTS:
+            slot_id = slots_map.get(slot_label)
+            if slot_id:
+                tasks.append(fire_booking(session, headers, target_date, slot_id, slot_label))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+        else:
+            print("No matching target slots found in fetched slot list.", flush=True)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-

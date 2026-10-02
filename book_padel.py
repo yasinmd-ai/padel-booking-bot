@@ -10,10 +10,10 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
-# Priority order: try 8-9 PM first tonight, then fall back to 7-8 PM.
+# Strict full-text matching for exact slot selection
 PREFERRED_SLOTS = [
-    ("09:00 PM", "8:00 PM - 9:00 PM"),
-    ("08:00 PM", "7:00 PM - 8:00 PM"),
+    "8:00 PM - 9:00 PM",
+    "7:00 PM - 8:00 PM",
 ]
 
 CLOCK_OFFSET = timedelta(0)  # Populated by sync_server_time()
@@ -186,16 +186,20 @@ async def main():
             print(f"All visible time slots tonight: {all_slots_text}", flush=True)
 
             selected_slot_label = None
-            for slot_code, slot_label in PREFERRED_SLOTS:
-                slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot_code}')")
+            for slot_label in PREFERRED_SLOTS:
+                # Strictly match exact full slot label (e.g., '8:00 PM - 9:00 PM')
+                slot_locator = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").filter(has_text=slot_label)
                 if await slot_locator.count() > 0:
-                    selected_slot_label = slot_label
-                    print(f"Selecting slot: {slot_code} ({slot_label})...", flush=True)
-                    await slot_locator.first.click()
-                    break
+                    matched_el = slot_locator.first
+                    exact_text = (await matched_el.text_content()).strip()
+                    if exact_text == slot_label:
+                        selected_slot_label = slot_label
+                        print(f"Selecting exact preferred slot: {slot_label}...", flush=True)
+                        await matched_el.click()
+                        break
 
             if not selected_slot_label:
-                print(f"None of {[s[0] for s in PREFERRED_SLOTS]} available. Aborting booking.", flush=True)
+                print(f"None of preferred slots {PREFERRED_SLOTS} available. Aborting booking.", flush=True)
                 await page.screenshot(path="booking_result_noslots.png")
                 await browser.close()
                 return

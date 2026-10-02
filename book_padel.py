@@ -105,25 +105,23 @@ async def run_full_booking():
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Click the time dropdown safely using lowercase #time and correct classes
-                for dropdown_selector in ["#time", ".form-control-dropdown", "text=Time"]:
-                    try:
-                        elem = page.locator(dropdown_selector).first
-                        if await elem.count() > 0:
-                            print(f"Found dropdown using selector: {dropdown_selector}, clicking...", flush=True)
-                            await elem.click()
-                            print("Dropdown clicked, waiting for items to render...", flush=True)
-                            await page.wait_for_selector("a.dropdown-item, [role='button']", timeout=5000)
-                            await asyncio.sleep(1.0)
-                            break
-                    except Exception as err:
-                        print(f"Dropdown selector {dropdown_selector} note: {err}")
-                        continue
+                # Direct click on the lowercase #time container
+                time_box = page.locator("#time").first
+                if await time_box.count() > 0:
+                    print("Found #time container, clicking...", flush=True)
+                    await time_box.click()
+                else:
+                    print("Fallback click on Time text...", flush=True)
+                    await page.click("text=Time")
+
+                print("Waiting for dropdown option items to render...", flush=True)
+                await page.wait_for_selector("a.dropdown-item", timeout=7000)
+                await asyncio.sleep(1.0)
 
                 # Try preferred slots first
                 for slot_label in PREFERRED_SLOTS:
                     try:
-                        slot_option = page.locator(f"a.dropdown-item:has-text('{slot_label}'), [role='button']:has-text('{slot_label}')").first
+                        slot_option = page.locator(f"a.dropdown-item:has-text('{slot_label}')").first
                         if await slot_option.count() > 0:
                             print(f"Found preferred slot {slot_label}! Clicking...", flush=True)
                             await slot_option.click()
@@ -132,21 +130,15 @@ async def run_full_booking():
                     except Exception:
                         continue
 
-                # Fallback for testing: Grab the FIRST available slot in the dropdown list
+                # Fallback for testing: Grab the FIRST available slot
                 if not booked:
                     print("Preferred slots not available. Selecting the first available test slot...", flush=True)
-                    for option_selector in ["a.dropdown-item", "[role='button']", ".dropdown-menu a"]:
-                        try:
-                            first_slot = page.locator(option_selector).first
-                            if await first_slot.count() > 0:
-                                txt = await first_slot.inner_text()
-                                if "AM" in txt or "PM" in txt:
-                                    print(f"Selecting fallback test slot: '{txt.strip()}'", flush=True)
-                                    await first_slot.click()
-                                    booked = True
-                                    break
-                        except Exception:
-                            continue
+                    first_slot = page.locator("a.dropdown-item").first
+                    if await first_slot.count() > 0:
+                        txt = await first_slot.inner_text()
+                        print(f"Selecting fallback test slot: '{txt.strip()}'", flush=True)
+                        await first_slot.click()
+                        booked = True
 
             except Exception as e:
                 print(f"Error interacting with time dropdown: {e}")

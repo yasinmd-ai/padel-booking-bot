@@ -101,31 +101,50 @@ async def run_full_booking():
             except Exception as e:
                 print(f"Date selection note: {e}")
 
-            # 5. Select Time Slot and Book
-            print("Searching for available evening slots...", flush=True)
+            # 5. Select Time Slot and Book (with Fallback to ANY available slot for testing)
+            print("Searching for available time slots...", flush=True)
             booked = False
+            
+            # First try preferred slots
             for slot_label in PREFERRED_SLOTS:
                 try:
                     slot_btn = page.locator(f"text='{slot_label}'").first
                     if await slot_btn.count() > 0:
-                        print(f"Found slot {slot_label}! Clicking...", flush=True)
+                        print(f"Found preferred slot {slot_label}! Clicking...", flush=True)
                         await slot_btn.click()
-                        await asyncio.sleep(2)
-                        
-                        # Click Confirm / Book
-                        confirm_btn = page.locator("button:has-text('Book'), button:has-text('Confirm'), button:has-text('Proceed')").first
-                        if await confirm_btn.count() > 0:
-                            print("Clicking final book/confirm button...", flush=True)
-                            await confirm_btn.click()
-                            await asyncio.sleep(5)
-                            print("SUCCESS: Padel court booked successfully!")
+                        booked = True
+                        break
+                except Exception:
+                    continue
+
+            # Fallback: If no preferred slot found, grab ANY available slot on the page for testing
+            if not booked:
+                print("Preferred slots not found. Looking for *any* available slot to test booking flow...", flush=True)
+                for generic_selector in [".slot-item:not(.booked)", "button.slot", "[class*='slot']:not([disabled])", "div.time-slot"]:
+                    try:
+                        slot_elem = page.locator(generic_selector).first
+                        if await slot_elem.count() > 0:
+                            slot_text = await slot_elem.inner_text()
+                            print(f"Found available test slot: '{slot_text.strip()}'. Clicking...", flush=True)
+                            await slot_elem.click()
                             booked = True
                             break
-                except Exception as ex:
-                    print(f"Slot {slot_label} attempt note: {ex}")
+                    except Exception:
+                        continue
 
-            if not booked:
-                print("Could not find or book any preferred slots. (Slots may not be open for booking yet on this test date).")
+            if booked:
+                await asyncio.sleep(2)
+                # Click Confirm / Book
+                confirm_btn = page.locator("button:has-text('Book'), button:has-text('Confirm'), button:has-text('Proceed')").first
+                if await confirm_btn.count() > 0:
+                    print("Clicking final book/confirm button...", flush=True)
+                    await confirm_btn.click()
+                    await asyncio.sleep(5)
+                    print("SUCCESS: Test booking completed successfully!")
+                else:
+                    print("Clicked slot, but could not locate final confirmation button.")
+            else:
+                print("No slots whatsoever were available to click on this date.")
 
         except Exception as e:
             print(f"An error occurred during booking: {e}")

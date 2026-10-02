@@ -68,8 +68,6 @@ async def extract_live_auth_and_slots(target_date):
 
         async def handle_response(response):
             nonlocal sniffed_slots_data
-            if any(term in response.url for term in ["amenity", "slot", "availability", "court"]):
-                print(f"[SNIFFED RESPONSE] {response.status} | {response.url}", flush=True)
             if "amenities" in response.url and response.status == 200:
                 try:
                     body = await response.json()
@@ -97,7 +95,7 @@ async def extract_live_auth_and_slots(target_date):
 
         try:
             await asyncio.gather(
-                page.wait_for_load_state("networkidle", timeout=20000),
+                page.wait_for_load_state("domcontentloaded", timeout=20000),
                 page.click("button.button__primary:has-text('Sign in')")
             )
         except Exception:
@@ -106,8 +104,8 @@ async def extract_live_auth_and_slots(target_date):
         print("Logged in. Navigating to amenities...", flush=True)
         await asyncio.sleep(3)
 
-        # 2. Go to amenities and give it time to fully render
-        await page.goto("https://www.damacliving.com/amenities", wait_until="networkidle", timeout=20000)
+        # 2. Go to amenities using domcontentloaded to prevent background polling timeouts
+        await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(6)
 
         # Try multiple variations to find the Padel/Paddle card

@@ -9,7 +9,7 @@ PASSWORD = os.getenv("DAMAC_PASSWORD")
 
 # Identifiers
 AMENITY_ID = "a5Y07000000wqfhEAA"      # D2 Sports Town - Paddle Court 1
-UNIT_ID = "a0x0700008cDwoAAE"         # Booking Unit ID
+UNIT_ID = "a0x07000008cDwoAAE"         # Corrected Booking Unit ID
 ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
@@ -40,18 +40,18 @@ def synced_now_gst():
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
-async def sleep_until_pre_booking():
+async def sleep_until_midnight():
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
 
+    # If already past midnight (within 15 mins), start immediately
     if gst_now < today_midnight + timedelta(minutes=15):
         return
 
-    target_pre_time = next_midnight - timedelta(minutes=2)
-    if gst_now < target_pre_time:
-        wait_seconds = (target_pre_time - gst_now).total_seconds()
-        print(f"[{gst_now:%H:%M:%S} GST] Waiting {wait_seconds:.2f}s until 11:58 PM GST...", flush=True)
+    wait_seconds = (next_midnight - gst_now).total_seconds()
+    if wait_seconds > 0:
+        print(f"[{gst_now:%H:%M:%S} GST] Waiting {wait_seconds:.2f}s until 00:00:00 GST...", flush=True)
         await asyncio.sleep(wait_seconds)
 
 
@@ -93,7 +93,6 @@ async def fetch_available_slots(session, headers, target_date):
     async with session.get(url, headers=headers) as resp:
         if resp.status == 200:
             data = await resp.json()
-            # Map slot labels to their amenity_slot_id
             slots = {}
             for item in data.get("data", []):
                 slot_label = item.get("slot_time") or item.get("name")
@@ -130,7 +129,6 @@ async def fire_booking(session, headers, target_date, slot_id, label):
 
 async def main():
     await sync_server_time()
-    await sleep_until_pre_booking()
 
     bearer_token, custom_identifier = await extract_live_auth()
     if not bearer_token:
@@ -149,21 +147,23 @@ async def main():
         "x-custom-identifier": custom_identifier or "f92ce3684667d4627201f81479ed7162",
     }
 
-    # Furthest unlocked target date (2 weeks out / 14 days)
+    # Wait until exact midnight GST when slots unlock
+    await sleep_until_midnight()
+
+    # Target date is 14 days out from today
     target_date = (synced_now_gst() + timedelta(days=14)).strftime("%Y-%m-%d")
 
     async with aiohttp.ClientSession() as session:
-        # 1. Fetch available slot IDs right at 11:59:58 PM GST
-        slots_map = await fetch_available_slots(session, headers, target_date)
-        
-        # 2. Hold until 00:00:00.000 GST
-        gst_now = synced_now_gst()
-        midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        wait_seconds = (midnight - gst_now).total_seconds() - 0.05
-        if wait_seconds > 0:
-            await asyncio.sleep(wait_seconds)
+        # Retry fetching slots for up to 5 seconds right at midnight
+        slots_map = {}
+        for attempt in range(10):
+            slots_map = await fetch_available_slots(session, headers, target_date)
+            if slots_map:
+                print(f"[{synced_now_gst():%H:%M:%S.%f}] Successfully fetched slots on attempt {attempt+1}.", flush=True)
+                break
+            await asyncio.sleep(0.5)
 
-        # 3. Fire requests concurrently
+        # Dispatch bookings concurrently for preferred slots
         tasks = []
         for slot_label in PREFERRED_SLOTS:
             slot_id = slots_map.get(slot_label)
@@ -173,7 +173,7 @@ async def main():
         if tasks:
             await asyncio.gather(*tasks)
         else:
-            print("No matching target slots found in fetched slot list.", flush=True)
+            print(f"No matching target slots found for {target_date}.", flush=True)
 
 
 if __name__ == "__main__":

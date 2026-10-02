@@ -105,17 +105,19 @@ async def run_full_booking():
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Click the time dropdown safely
-                for dropdown_selector in ["#Time", ".form-control-dropdown", "text=Time"]:
+                # Click the time dropdown safely using lowercase #time and correct classes
+                for dropdown_selector in ["#time", ".form-control-dropdown", "text=Time"]:
                     try:
                         elem = page.locator(dropdown_selector).first
                         if await elem.count() > 0:
+                            print(f"Found dropdown using selector: {dropdown_selector}, clicking...", flush=True)
                             await elem.click()
                             print("Dropdown clicked, waiting for items to render...", flush=True)
                             await page.wait_for_selector("a.dropdown-item, [role='button']", timeout=5000)
                             await asyncio.sleep(1.0)
                             break
-                    except Exception:
+                    except Exception as err:
+                        print(f"Dropdown selector {dropdown_selector} note: {err}")
                         continue
 
                 # Try preferred slots first

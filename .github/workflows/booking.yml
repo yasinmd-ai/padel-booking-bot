@@ -9,7 +9,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: '56 19 * * *' # Midnight GST (19:56 UTC)
+    - cron: '56 19 * * *' # 11:56 PM GST / 19:56 UTC
 
 jobs:
   book-court:

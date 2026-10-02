@@ -101,19 +101,18 @@ async def run_full_booking():
             except Exception as e:
                 print(f"Date selection note: {e}")
 
-            # 5. Open Time Dropdown and Select Slot
+            # 5. Open Time Dropdown and Select Slot (Using case-insensitive matching)
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Target the dropdown container directly using its exact classes and ID
-                dropdown_elem = page.locator("div#time, .form-control-dropdown").first
-                if await dropdown_elem.count() > 0:
-                    print("Found time dropdown container, clicking...", flush=True)
-                    await dropdown_elem.click(force=True)
+                # [id='time' i] matches #time or #Time regardless of case
+                time_box = page.locator("[id='time' i], .form-control-dropdown").first
+                if await time_box.count() > 0:
+                    print("Found time dropdown element, clicking...", flush=True)
+                    await time_box.click(force=True)
                 else:
-                    # Fallback click inside the modal body on the Time label
-                    print("Clicking via modal label fallback...", flush=True)
-                    await page.locator(".modal-body").get_by_text("Time", exact=True).click(force=True)
+                    print("Clicking dropdown via text fallback...", flush=True)
+                    await page.get_by_text("Time", exact=True).click(force=True)
 
                 print("Waiting for dropdown items to render...", flush=True)
                 await page.wait_for_selector("a.dropdown-item", timeout=7000)

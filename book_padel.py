@@ -105,16 +105,17 @@ async def run_full_booking():
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Direct click on the lowercase #time container
-                time_box = page.locator("#time").first
-                if await time_box.count() > 0:
-                    print("Found #time container, clicking...", flush=True)
-                    await time_box.click()
+                # Target the dropdown container directly using its exact classes and ID
+                dropdown_elem = page.locator("div#time, .form-control-dropdown").first
+                if await dropdown_elem.count() > 0:
+                    print("Found time dropdown container, clicking...", flush=True)
+                    await dropdown_elem.click(force=True)
                 else:
-                    print("Fallback click on Time text...", flush=True)
-                    await page.click("text=Time")
+                    # Fallback click inside the modal body on the Time label
+                    print("Clicking via modal label fallback...", flush=True)
+                    await page.locator(".modal-body").get_by_text("Time", exact=True).click(force=True)
 
-                print("Waiting for dropdown option items to render...", flush=True)
+                print("Waiting for dropdown items to render...", flush=True)
                 await page.wait_for_selector("a.dropdown-item", timeout=7000)
                 await asyncio.sleep(1.0)
 

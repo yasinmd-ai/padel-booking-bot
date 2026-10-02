@@ -105,8 +105,8 @@ async def run_full_booking():
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Click the time dropdown safely
-                for dropdown_selector in ["mat-select", "[formcontrolname*='time']", ".mat-mdc-select", "text=Time"]:
+                # Click the time dropdown safely using actual DOM selectors
+                for dropdown_selector in ["#Time", ".form-control-dropdown", "text=Time"]:
                     try:
                         elem = page.locator(dropdown_selector).first
                         if await elem.count() > 0:
@@ -116,10 +116,10 @@ async def run_full_booking():
                     except Exception:
                         continue
 
-                # Try preferred slots first using clean selectors
+                # Try preferred slots first
                 for slot_label in PREFERRED_SLOTS:
                     try:
-                        slot_option = page.locator(f"mat-option:has-text('{slot_label}')").first
+                        slot_option = page.locator(f"a.dropdown-item:has-text('{slot_label}'), [role='button']:has-text('{slot_label}')").first
                         if await slot_option.count() > 0:
                             print(f"Found preferred slot {slot_label}! Clicking...", flush=True)
                             await slot_option.click()
@@ -131,15 +131,16 @@ async def run_full_booking():
                 # Fallback for testing: Grab the FIRST available slot in the dropdown list
                 if not booked:
                     print("Preferred slots not available. Selecting the first available test slot...", flush=True)
-                    for option_selector in ["mat-option", ".mat-mdc-option", "[role='option']"]:
+                    for option_selector in ["a.dropdown-item", "[role='button']", ".dropdown-menu a"]:
                         try:
                             first_slot = page.locator(option_selector).first
                             if await first_slot.count() > 0:
                                 txt = await first_slot.inner_text()
-                                print(f"Selecting fallback test slot: '{txt.strip()}'", flush=True)
-                                await first_slot.click()
-                                booked = True
-                                break
+                                if "AM" in txt or "PM" in txt:
+                                    print(f"Selecting fallback test slot: '{txt.strip()}'", flush=True)
+                                    await first_slot.click()
+                                    booked = True
+                                    break
                         except Exception:
                             continue
 
@@ -149,7 +150,7 @@ async def run_full_booking():
             if booked:
                 await asyncio.sleep(2)
                 # Final confirmation / book button
-                for confirm_selector in ["button:has-text('Book')", "button:has-text('Confirm')", "button:has-text('Proceed')"]:
+                for confirm_selector in ["button:has-text('Book')", "button:has-text('Confirm')", "button:has-text('Proceed')", "button.btn-primary"]:
                     try:
                         confirm_btn = page.locator(confirm_selector).first
                         if await confirm_btn.count() > 0:

@@ -9,7 +9,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: '54 19 * * *' # Adjusted to 11:54 PM GST (19:54 UTC) to account for runner queue delays
+    - cron: '45 19 * * *' # Adjusted to 11:45 PM GST (19:45 UTC) to give a safe buffer against GitHub queue delays
 
 jobs:
   book-court:

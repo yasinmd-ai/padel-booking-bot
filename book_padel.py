@@ -6,10 +6,11 @@ import aiohttp
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
+IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
-# Priority order: try 8-9 PM first, then fall back to 7-8 PM.
+# Priority order: try 8-9 PM first tonight, then fall back to 7-8 PM.
 PREFERRED_SLOTS = [
     ("09:00 PM", "8:00 PM - 9:00 PM"),
     ("08:00 PM", "7:00 PM - 8:00 PM"),
@@ -84,7 +85,11 @@ async def wait_for_exact_midnight():
 
 async def main():
     await sync_server_time()
-    await sleep_until_pre_booking_time()
+    
+    if IS_TEST_MODE:
+        print("[TEST MODE] Bypassing pre-booking sleep timer.", flush=True)
+    else:
+        await sleep_until_pre_booking_time()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -145,8 +150,11 @@ async def main():
             await browser.close()
             return
 
-        # 4. Hold until 11:59:59 PM GST
-        await wait_for_exact_midnight()
+        # 4. Hold until midnight (or bypass if test mode)
+        if IS_TEST_MODE:
+            print("[TEST MODE] Bypassing midnight hold timer. Proceeding instantly...", flush=True)
+        else:
+            await wait_for_exact_midnight()
 
         # 5. Rapid Execution
         booking_success = False

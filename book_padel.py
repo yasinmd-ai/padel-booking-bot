@@ -201,7 +201,7 @@ async def main():
 
         if target_slot_id:
             status, response = await fire_booking(session, headers, target_date, target_slot_id, target_slot_label)
-            if status == 200 or status == 201:
+            if status in (200, 201):
                 print(f"SUCCESS: Successfully booked {target_slot_label} for {target_date}!", flush=True)
             else:
                 print(f"BOOKING FAILED for {target_slot_label}. Server response: {response}", flush=True)

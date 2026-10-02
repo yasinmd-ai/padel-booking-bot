@@ -17,7 +17,13 @@ REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenitie
 SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amentiy-id={AMENITY_ID}&bookingUnit-id={UNIT_ID}"
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
-PREFERRED_SLOTS = ["08:00 PM - 09:00 PM", "07:00 PM - 08:00 PM"]
+# Priority order: Try 8-9 PM first, fallback to 7-8 PM
+PREFERRED_SLOTS = [
+    "08:00 PM - 09:00 PM",
+    "07:00 PM - 08:00 PM",
+    "20:00 - 21:00",
+    "19:00 - 20:00"
+]
 
 CLOCK_OFFSET = timedelta(0)
 
@@ -90,7 +96,6 @@ async def extract_live_auth():
                 page.click("button.button__primary:has-text('Sign in')")
             )
         except Exception:
-            # Fallback sleep if networkidle timeout triggers after redirection
             await asyncio.sleep(5)
 
         await asyncio.sleep(2)
@@ -110,11 +115,17 @@ async def fetch_available_slots(session, headers, target_date):
         if resp.status == 200:
             data = await resp.json()
             slots = {}
-            for item in data.get("data", []):
+            raw_items = data.get("data", [])
+            print(f"[API] Retrieved {len(raw_items)} slot items from API.", flush=True)
+            for item in raw_items:
                 slot_label = item.get("slot_time") or item.get("name")
                 slot_id = item.get("id") or item.get("amenity_slot_id")
+                is_available = item.get("is_available", True)
+                
                 if slot_label and slot_id:
-                    slots[slot_label] = slot_id
+                    print(f" - Found Slot: '{slot_label}' | ID: {slot_id} | Available: {is_available}", flush=True)
+                    if is_available:
+                        slots[slot_label] = slot_id
             return slots
     return {}
 
@@ -178,16 +189,24 @@ async def main():
                 break
             await asyncio.sleep(0.5)
 
-        tasks = []
-        for slot_label in PREFERRED_SLOTS:
-            slot_id = slots_map.get(slot_label)
-            if slot_id:
-                tasks.append(fire_booking(session, headers, target_date, slot_id, slot_label))
+        # Pick ONLY the top available slot from preferred list
+        target_slot_label = None
+        target_slot_id = None
 
-        if tasks:
-            await asyncio.gather(*tasks)
+        for slot_label in PREFERRED_SLOTS:
+            if slot_label in slots_map:
+                target_slot_label = slot_label
+                target_slot_id = slots_map[slot_label]
+                break
+
+        if target_slot_id:
+            status, response = await fire_booking(session, headers, target_date, target_slot_id, target_slot_label)
+            if status == 200 or status == 201:
+                print(f"SUCCESS: Successfully booked {target_slot_label} for {target_date}!", flush=True)
+            else:
+                print(f"BOOKING FAILED for {target_slot_label}. Server response: {response}", flush=True)
         else:
-            print(f"No matching target slots found for {target_date}.", flush=True)
+            print(f"No preferred target slots available for {target_date}.", flush=True)
 
 
 if __name__ == "__main__":

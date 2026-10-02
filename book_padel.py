@@ -14,7 +14,7 @@ UNIT_ID = "a0x07000008cDwoAAE"          # Booking Unit ID
 ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
-SLOTS_ENDPOINT_TEMPLATE = "https://api.damacliving.com/damacliving/api/v1/amenities/{booking_date}?account_id=" + ACCOUNT_ID + "&amenity_id=" + AMENITY_ID + "&booking_unit_id=" + UNIT_ID
+SLOTS_ENDPOINT_TEMPLATE = "https://api.damacliving.com/damacliving/api/v1/amenities/{booking_date}"
 
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
@@ -111,7 +111,12 @@ async def extract_live_auth():
 
 async def fetch_available_slots(session, headers, target_date):
     url = SLOTS_ENDPOINT_TEMPLATE.format(booking_date=target_date)
-    async with session.get(url, headers=headers) as resp:
+    payload = {
+        "account_id": ACCOUNT_ID,
+        "amenity_id": AMENITY_ID,
+        "booking_unit_id": UNIT_ID
+    }
+    async with session.post(url, json=payload, headers=headers) as resp:
         if resp.status == 200:
             data = await resp.json()
             slots = {}

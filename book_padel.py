@@ -105,10 +105,16 @@ async def run_full_booking():
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Click the time select field from your screenshot
-                time_dropdown = page.locator("mat-select, [formcontrolname*='time'], .mat-mdc-select, text='Time'").first
-                await time_dropdown.click()
-                await asyncio.sleep(1.5)
+                # Find and click the time dropdown safely
+                for dropdown_selector in ["mat-select", "[formcontrolname*='time']", ".mat-mdc-select", "text=Time"]:
+                    try:
+                        elem = page.locator(dropdown_selector).first
+                        if await elem.count() > 0:
+                            await elem.click()
+                            await asyncio.sleep(1.5)
+                            break
+                    except Exception:
+                        continue
 
                 # Try preferred slots first
                 for slot_label in PREFERRED_SLOTS:

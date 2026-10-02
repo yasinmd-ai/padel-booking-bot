@@ -16,7 +16,6 @@ ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
 # Fixed query parameters (using underscores instead of hyphens)
 SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account_id={ACCOUNT_ID}&amenity_id={AMENITY_ID}&booking_unit_id={UNIT_ID}"
-
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
 PREFERRED_SLOTS = [

@@ -87,13 +87,17 @@ async def run_full_booking():
                 except Exception:
                     continue
 
-            # 4. Select Target Date
+            # 4. Select Target Date safely
             print(f"Selecting date {target_date}...", flush=True)
             try:
-                date_elem = page.locator(f"[data-date='{target_date}'], text='{target_date}'").first
+                date_elem = page.locator(f"[data-date='{target_date}']").first
                 if await date_elem.count() > 0:
                     await date_elem.click()
-                    await asyncio.sleep(3)
+                else:
+                    date_elem = page.locator(f"text='{target_date}'").first
+                    if await date_elem.count() > 0:
+                        await date_elem.click()
+                await asyncio.sleep(4)  # Wait for slots to load for this date
             except Exception as e:
                 print(f"Date selection note: {e}")
 
@@ -121,7 +125,7 @@ async def run_full_booking():
                     print(f"Slot {slot_label} attempt note: {ex}")
 
             if not booked:
-                print("Could not find or book any preferred slots.")
+                print("Could not find or book any preferred slots. (Slots may not be open for booking yet on this test date).")
 
         except Exception as e:
             print(f"An error occurred during booking: {e}")

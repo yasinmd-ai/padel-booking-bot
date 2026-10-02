@@ -10,11 +10,10 @@ IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 # Identifiers
 AMENITY_ID = "a5Y07000000wqfhEAA"      # D2 Sports Town - Paddle Court 1
-UNIT_ID = "a0x07000008cDwoAAE"         # Booking Unit ID
+UNIT_ID = "a0x07000008cDwoAAE"          # Booking Unit ID
 ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
-# Fixed parameter names: amenity-id and bookingunit-id
 SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amenity-id={AMENITY_ID}&bookingunit-id={UNIT_ID}"
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
@@ -53,8 +52,7 @@ async def sleep_until_midnight():
         return
 
     gst_now = synced_now_gst()
-    
-    # Correct target midnight logic
+
     if gst_now.hour >= 23:
         target_midnight = (gst_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     else:
@@ -122,7 +120,7 @@ async def fetch_available_slots(session, headers, target_date):
                 slot_label = item.get("slot_time") or item.get("name")
                 slot_id = item.get("id") or item.get("amenity_slot_id")
                 is_available = item.get("is_available", True)
-                
+
                 if slot_label and slot_id:
                     print(f" - Found Slot: '{slot_label}' | ID: {slot_id} | Available: {is_available}", flush=True)
                     if is_available:
@@ -150,9 +148,37 @@ async def fire_booking(session, headers, target_date, slot_id, label):
             text = await resp.text()
             print(f"[{synced_now_gst():%H:%M:%S.%f}] SERVER RESPONSE ({label}) [{resp.status}]: {text}", flush=True)
             return resp.status, text
+    except asyncio.TimeoutError:
+        print(f"[{synced_now_gst():%H:%M:%S.%f}] TIMEOUT waiting for response on {label} -- status UNKNOWN, check manually.", flush=True)
+        return "TIMEOUT", "request timed out, booking status unknown"
     except Exception as e:
         print(f"Failed to submit booking for {label}: {e}", flush=True)
         return None, str(e)
+
+
+async def book_with_fallback(session, headers, target_date, slots_map):
+    available_preferred = [
+        (label, slots_map[label]) for label in PREFERRED_SLOTS if label in slots_map
+    ]
+
+    if not available_preferred:
+        print(f"No preferred target slots available for {target_date}.", flush=True)
+        return
+
+    for label, slot_id in available_preferred:
+        status, response = await fire_booking(session, headers, target_date, slot_id, label)
+
+        if status in (200, 201):
+            print(f"SUCCESS: Successfully booked {label} for {target_date}!", flush=True)
+            return
+
+        if status == "TIMEOUT":
+            print(f"Stopping after timeout on {label}. Verify manually.", flush=True)
+            return
+
+        print(f"BOOKING FAILED for {label} (status: {status}). Trying next preferred slot...", flush=True)
+
+    print("Exhausted all available preferred slots -- none succeeded.", flush=True)
 
 
 async def main():
@@ -183,30 +209,14 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         slots_map = {}
-        for attempt in range(10):
+        for attempt in range(20):
             slots_map = await fetch_available_slots(session, headers, target_date)
             if slots_map:
-                print(f"[{synced_now_gst():%H:%M:%S.%f}] Successfully fetched slots on attempt {attempt+1}.", flush=True)
+                print(f"[{synced_now_gst():%H:%M:%S.%f}] Successfully fetched slots on attempt {attempt + 1}.", flush=True)
                 break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.15)
 
-        target_slot_label = None
-        target_slot_id = None
-
-        for slot_label in PREFERRED_SLOTS:
-            if slot_label in slots_map:
-                target_slot_label = slot_label
-                target_slot_id = slots_map[slot_label]
-                break
-
-        if target_slot_id:
-            status, response = await fire_booking(session, headers, target_date, target_slot_id, target_slot_label)
-            if status in (200, 201):
-                print(f"SUCCESS: Successfully booked {target_slot_label} for {target_date}!", flush=True)
-            else:
-                print(f"BOOKING FAILED for {target_slot_label}. Server response: {response}", flush=True)
-        else:
-            print(f"No preferred target slots available for {target_date}.", flush=True)
+        await book_with_fallback(session, headers, target_date, slots_map)
 
 
 if __name__ == "__main__":

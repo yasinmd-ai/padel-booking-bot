@@ -14,10 +14,10 @@ UNIT_ID = "a0x07000008cDwoAAE"         # Booking Unit ID
 ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
-SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amentiy-id={AMENITY_ID}&bookingUnit-id={UNIT_ID}"
+# Fixed parameter names: amenity-id and bookingunit-id
+SLOTS_ENDPOINT_TEMPLATE = f"https://api.damacliving.com/damacliving/api/v1/amenities/{{booking_date}}?account-id={ACCOUNT_ID}&amenity-id={AMENITY_ID}&bookingunit-id={UNIT_ID}"
 STATIC_API_TOKEN = "a740e9a60b62418ee08d65d53740c3346eef6edf994a0784f0def9ca13822a9b"
 
-# Priority order: Try 8-9 PM first, fallback to 7-8 PM
 PREFERRED_SLOTS = [
     "08:00 PM - 09:00 PM",
     "07:00 PM - 08:00 PM",
@@ -53,13 +53,14 @@ async def sleep_until_midnight():
         return
 
     gst_now = synced_now_gst()
-    today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    next_midnight = today_midnight + timedelta(days=1)
+    
+    # Correct target midnight logic
+    if gst_now.hour >= 23:
+        target_midnight = (gst_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        target_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    if gst_now < today_midnight + timedelta(minutes=15):
-        return
-
-    wait_seconds = (next_midnight - gst_now).total_seconds()
+    wait_seconds = (target_midnight - gst_now).total_seconds()
     if wait_seconds > 0:
         print(f"[{gst_now:%H:%M:%S} GST] Waiting {wait_seconds:.2f}s until 00:00:00 GST...", flush=True)
         await asyncio.sleep(wait_seconds)
@@ -189,7 +190,6 @@ async def main():
                 break
             await asyncio.sleep(0.5)
 
-        # Pick ONLY the top available slot from preferred list
         target_slot_label = None
         target_slot_id = None
 

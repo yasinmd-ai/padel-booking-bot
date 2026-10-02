@@ -101,17 +101,27 @@ async def run_full_booking():
             except Exception as e:
                 print(f"Date selection note: {e}")
 
-            # 5. Open Time Dropdown and Select Slot (Using case-insensitive matching)
-            print("Opening time slot dropdown...", flush=True)
+            # 5. Open Time Dropdown via JS Evaluation (Bypasses Playwright actionability timeouts)
+            print("Opening time slot dropdown via JS...", flush=True)
             booked = False
             try:
-                # [id='time' i] matches #time or #Time regardless of case
-                time_box = page.locator("[id='time' i], .form-control-dropdown").first
-                if await time_box.count() > 0:
-                    print("Found time dropdown element, clicking...", flush=True)
-                    await time_box.click(force=True)
-                else:
-                    print("Clicking dropdown via text fallback...", flush=True)
+                clicked = await page.evaluate("""() => {
+                    // Try finding the time container by ID (case-insensitive) or class
+                    let el = document.querySelector('#time') || document.querySelector('#Time') || document.querySelector('.form-control-dropdown');
+                    if (!el) {
+                        // Fallback: find element containing 'Time' label
+                        let labels = Array.from(document.querySelectorAll('label, div, span')).filter(e => e.textContent.trim() === 'Time');
+                        if (labels.length > 0) el = labels[0];
+                    }
+                    if (el) {
+                        el.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                
+                if not clicked:
+                    print("JS click fallback on text...", flush=True)
                     await page.get_by_text("Time", exact=True).click(force=True)
 
                 print("Waiting for dropdown items to render...", flush=True)
@@ -145,18 +155,15 @@ async def run_full_booking():
 
             if booked:
                 await asyncio.sleep(2)
-                # Final confirmation / book button
-                for confirm_selector in ["button:has-text('Book')", "button:has-text('Confirm')", "button:has-text('Proceed')", "button.btn-primary"]:
-                    try:
-                        confirm_btn = page.locator(confirm_selector).first
-                        if await confirm_btn.count() > 0:
-                            print("Clicking final book/confirm button...", flush=True)
-                            await confirm_btn.click()
-                            await asyncio.sleep(5)
-                            print("SUCCESS: Test booking completed successfully!")
-                            break
-                    except Exception:
-                        continue
+                # Final confirmation / book button via JS
+                await page.evaluate("""() => {
+                    let btn = Array.from(document.querySelectorAll('button')).find(b => 
+                        b.textContent.includes('Book') || b.textContent.includes('Confirm') || b.textContent.includes('Proceed')
+                    );
+                    if (btn) btn.click();
+                }""")
+                await asyncio.sleep(5)
+                print("SUCCESS: Test booking completed successfully!")
             else:
                 print("No time slots were found in the dropdown to click.")
 

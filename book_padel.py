@@ -101,7 +101,7 @@ async def run_full_booking():
             except Exception as e:
                 print(f"Date selection note: {e}")
 
-           # 5. Open Time Dropdown and Select Slot
+            # 5. Open Time Dropdown and Select Slot
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
@@ -162,19 +162,6 @@ async def run_full_booking():
                         continue
             else:
                 print("No time slots were found in the dropdown to click.")
-
-            if booked:
-                await asyncio.sleep(2)
-                confirm_btn = page.locator("button:has-text('Book'), button:has-text('Confirm'), button:has-text('Proceed')").first
-                if await confirm_btn.count() > 0:
-                    print("Clicking final book/confirm button...", flush=True)
-                    await confirm_btn.click()
-                    await asyncio.sleep(5)
-                    print("SUCCESS: Test booking completed successfully!")
-                else:
-                    print("Clicked slot, but could not locate final confirmation button.")
-            else:
-                print("Could not find any time slots to click.")
 
         except Exception as e:
             print(f"An error occurred during booking: {e}")

@@ -30,5 +30,7 @@ jobs:
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
+          # Bypasses the midnight sleep delay when triggered manually
+          TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
         run: |
           python book_padel.py

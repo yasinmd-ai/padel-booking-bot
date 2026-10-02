@@ -45,7 +45,6 @@ def synced_now_gst():
 async def extract_live_auth_and_slots(target_date):
     print("Sniffing live auth headers and real slot API request via Playwright...", flush=True)
     async with async_playwright() as p:
-        # Run non-headless so you can see what it's clicking if needed, or keep headless=True
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
@@ -69,6 +68,8 @@ async def extract_live_auth_and_slots(target_date):
 
         async def handle_response(response):
             nonlocal sniffed_slots_data
+            if any(term in response.url for term in ["amenity", "slot", "availability", "court"]):
+                print(f"[SNIFFED RESPONSE] {response.status} | {response.url}", flush=True)
             if "amenities" in response.url and response.status == 200:
                 try:
                     body = await response.json()
@@ -105,19 +106,21 @@ async def extract_live_auth_and_slots(target_date):
         print("Logged in. Navigating to amenities...", flush=True)
         await asyncio.sleep(3)
 
-        # 2. Go to amenities and interact to trigger the exact slot query
-        await page.goto("https://www.damacliving.com/amenities", wait_until="domcontentloaded", timeout=15000)
-        await asyncio.sleep(5)
+        # 2. Go to amenities and give it time to fully render
+        await page.goto("https://www.damacliving.com/amenities", wait_until="networkidle", timeout=20000)
+        await asyncio.sleep(6)
 
-        # Try to click on Paddle / Padel court if visible
-        try:
-            padel_card = page.locator("text=Paddle").first
-            if await padel_card.count() > 0:
-                print("Found Padel court in UI, clicking...", flush=True)
-                await padel_card.click()
-                await asyncio.sleep(5)
-        except Exception as e:
-            print(f"UI interaction note: {e}", flush=True)
+        # Try multiple variations to find the Padel/Paddle card
+        for selector in ["text=Paddle", "text=Padel", "text=D2 Sports Town", f"text={AMENITY_ID}", "[routerLink*='amenities']", ".amenity-card"]:
+            try:
+                elem = page.locator(selector).first
+                if await elem.count() > 0:
+                    print(f"Found element with selector '{selector}', clicking...", flush=True)
+                    await elem.click()
+                    await asyncio.sleep(6)
+                    break
+            except Exception:
+                continue
 
         await browser.close()
         return bearer_token, custom_identifier, sniffed_slots_data
@@ -130,7 +133,7 @@ async def main():
     target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
     print(f"Targeting booking date: {target_date}", flush=True)
 
-    bearer_token, custom_identifier, sniffed_slots = await extracellular_auth if False else await extract_live_auth_and_slots(target_date)
+    bearer_token, custom_identifier, sniffed_slots = await extract_live_auth_and_slots(target_date)
 
     if sniffed_slots:
         print("\nSuccessfully captured slots via browser interaction:", flush=True)

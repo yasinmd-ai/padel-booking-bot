@@ -101,11 +101,11 @@ async def run_full_booking():
             except Exception as e:
                 print(f"Date selection note: {e}")
 
-            # 5. Open Time Dropdown and Select Slot
+           # 5. Open Time Dropdown and Select Slot
             print("Opening time slot dropdown...", flush=True)
             booked = False
             try:
-                # Find and click the time dropdown safely
+                # Click the time dropdown safely
                 for dropdown_selector in ["mat-select", "[formcontrolname*='time']", ".mat-mdc-select", "text=Time"]:
                     try:
                         elem = page.locator(dropdown_selector).first
@@ -116,27 +116,52 @@ async def run_full_booking():
                     except Exception:
                         continue
 
-                # Try preferred slots first
+                # Try preferred slots first using clean selectors
                 for slot_label in PREFERRED_SLOTS:
-                    slot_option = page.locator(f"mat-option:has-text('{slot_label}'), .mat-mdc-option:has-text('{slot_label}'), text='{slot_label}'").first
-                    if await slot_option.count() > 0:
-                        print(f"Found preferred slot {slot_label}! Clicking...", flush=True)
-                        await slot_option.click()
-                        booked = True
-                        break
+                    try:
+                        slot_option = page.locator(f"mat-option:has-text('{slot_label}')").first
+                        if await slot_option.count() > 0:
+                            print(f"Found preferred slot {slot_label}! Clicking...", flush=True)
+                            await slot_option.click()
+                            booked = True
+                            break
+                    except Exception:
+                        continue
 
-                # Fallback to any available slot if preferred aren't visible
+                # Fallback for testing: Grab the FIRST available slot in the dropdown list
                 if not booked:
-                    print("Preferred slots not found. Selecting first available time slot...", flush=True)
-                    first_slot = page.locator("mat-option, .mat-mdc-option, [role='option']").first
-                    if await first_slot.count() > 0:
-                        txt = await first_slot.inner_text()
-                        print(f"Selecting slot: {txt.strip()}", flush=True)
-                        await first_slot.click()
-                        booked = True
+                    print("Preferred slots not available. Selecting the first available test slot...", flush=True)
+                    for option_selector in ["mat-option", ".mat-mdc-option", "[role='option']"]:
+                        try:
+                            first_slot = page.locator(option_selector).first
+                            if await first_slot.count() > 0:
+                                txt = await first_slot.inner_text()
+                                print(f"Selecting fallback test slot: '{txt.strip()}'", flush=True)
+                                await first_slot.click()
+                                booked = True
+                                break
+                        except Exception:
+                            continue
 
             except Exception as e:
                 print(f"Error interacting with time dropdown: {e}")
+
+            if booked:
+                await asyncio.sleep(2)
+                # Final confirmation / book button
+                for confirm_selector in ["button:has-text('Book')", "button:has-text('Confirm')", "button:has-text('Proceed')"]:
+                    try:
+                        confirm_btn = page.locator(confirm_selector).first
+                        if await confirm_btn.count() > 0:
+                            print("Clicking final book/confirm button...", flush=True)
+                            await confirm_btn.click()
+                            await asyncio.sleep(5)
+                            print("SUCCESS: Test booking completed successfully!")
+                            break
+                    except Exception:
+                        continue
+            else:
+                print("No time slots were found in the dropdown to click.")
 
             if booked:
                 await asyncio.sleep(2)

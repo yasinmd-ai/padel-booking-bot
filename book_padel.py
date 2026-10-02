@@ -6,10 +6,11 @@ import aiohttp
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
+IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 # Identifiers
 AMENITY_ID = "a5Y07000000wqfhEAA"      # D2 Sports Town - Paddle Court 1
-UNIT_ID = "a0x07000008cDwoAAE"         # Corrected Booking Unit ID
+UNIT_ID = "a0x07000008cDwoAAE"         # Booking Unit ID
 ACCOUNT_ID = "0010700000gYVSsAAO"       # Account ID
 
 REGISTRATION_ENDPOINT = "https://api.damacliving.com/damacliving/api/v1/amenities/registration"
@@ -41,11 +42,15 @@ def synced_now_gst():
 
 
 async def sleep_until_midnight():
+    if IS_TEST_MODE:
+        print("[TEST MODE] Skipping midnight sleep delay. Running immediately...", flush=True)
+        return
+
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
 
-    # If already past midnight (within 15 mins), start immediately
+    # If running within 15 minutes after midnight, execute immediately
     if gst_now < today_midnight + timedelta(minutes=15):
         return
 
@@ -147,14 +152,18 @@ async def main():
         "x-custom-identifier": custom_identifier or "f92ce3684667d4627201f81479ed7162",
     }
 
-    # Wait until exact midnight GST when slots unlock
+    # Wait until midnight GST for scheduled runs (skipped during manual tests)
     await sleep_until_midnight()
 
-    # Target date is 14 days out from today
-    target_date = (synced_now_gst() + timedelta(days=14)).strftime("%Y-%m-%d")
+    # For manual testing during the day, look at an unlocked date (e.g., 2 days out)
+    # For scheduled nightly runs at 00:00 GST, targets the freshly unlocked 14-day window
+    days_out = 2 if IS_TEST_MODE else 14
+    target_date = (synced_now_gst() + timedelta(days=days_out)).strftime("%Y-%m-%d")
+
+    print(f"Targeting booking date: {target_date}", flush=True)
 
     async with aiohttp.ClientSession() as session:
-        # Retry fetching slots for up to 5 seconds right at midnight
+        # Retry fetching slots up to 10 times (5 seconds)
         slots_map = {}
         for attempt in range(10):
             slots_map = await fetch_available_slots(session, headers, target_date)
@@ -163,7 +172,6 @@ async def main():
                 break
             await asyncio.sleep(0.5)
 
-        # Dispatch bookings concurrently for preferred slots
         tasks = []
         for slot_label in PREFERRED_SLOTS:
             slot_id = slots_map.get(slot_label)

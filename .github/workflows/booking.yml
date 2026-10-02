@@ -31,4 +31,4 @@ jobs:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
         run: |
-          python book_padel_api.py
+          python book_padel.py

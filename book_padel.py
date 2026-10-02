@@ -10,7 +10,7 @@ IS_TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
-# Priority order: try 8-9 PM first tonight, then fall back to 7-8 PM.
+# Your production preferred slots
 PREFERRED_SLOTS = [
     ("09:00 PM", "8:00 PM - 9:00 PM"),
     ("08:00 PM", "7:00 PM - 8:00 PM"),
@@ -20,10 +20,6 @@ CLOCK_OFFSET = timedelta(0)  # Populated by sync_server_time()
 
 
 async def sync_server_time():
-    """
-    Fetches the Date header from damacliving.com and computes the offset
-    between the runner's local clock and Damac's server clock.
-    """
     global CLOCK_OFFSET
     try:
         async with aiohttp.ClientSession() as session:
@@ -41,12 +37,10 @@ async def sync_server_time():
 
 
 def synced_now_gst():
-    """Local time corrected by CLOCK_OFFSET, converted to GST (UTC+4)."""
     return datetime.now(timezone.utc) + CLOCK_OFFSET + timedelta(hours=4)
 
 
 async def sleep_until_pre_booking_time():
-    """Sleeps BEFORE opening browser until ~11:58:00 PM GST to avoid session timeouts."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
@@ -66,7 +60,6 @@ async def sleep_until_pre_booking_time():
 
 
 async def wait_for_exact_midnight():
-    """Holds on pre-booking screen until exactly 11:59:59 PM GST."""
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -189,12 +182,21 @@ async def main():
                 slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{slot_code}')")
                 if await slot_locator.count() > 0:
                     selected_slot_label = slot_label
-                    print(f"Selecting slot: {slot_code} ({slot_label})...", flush=True)
+                    print(f"Selecting preferred slot: {slot_code} ({slot_label})...", flush=True)
                     await slot_locator.first.click()
                     break
 
+            # Fallback for testing: if preferred slots are taken, grab the first available slot!
+            if not selected_slot_label and IS_TEST_MODE:
+                print("Preferred slots not available. [TEST MODE] Selecting the first available open slot...", flush=True)
+                first_slot = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").first
+                if await first_slot.count() > 0:
+                    selected_slot_label = (await first_slot.text_content()).strip()
+                    print(f"Selecting fallback test slot: '{selected_slot_label}'", flush=True)
+                    await first_slot.click()
+
             if not selected_slot_label:
-                print(f"None of {[s[0] for s in PREFERRED_SLOTS]} available. Aborting booking.", flush=True)
+                print("No time slots available to book. Aborting.", flush=True)
                 await page.screenshot(path="booking_result_noslots.png")
                 await browser.close()
                 return

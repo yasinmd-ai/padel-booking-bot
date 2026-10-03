@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 import aiohttp
@@ -10,13 +11,44 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
-# Strict full-text matching for exact slot selection
+# Priority order of preferred slots. Written in a normalized, zero-padded
+# "HH:MM AM/PM - HH:MM AM/PM" form -- actual dropdown text is normalized the
+# same way before comparing (see normalize_slot_text), so differences in
+# dash character (-, --, en dash) or incidental whitespace won't cause a
+# false "not available" the way strict `==` matching did last night.
+#
+# 9:00 PM - 10:00 PM is included as an explicit third choice: on the night
+# you tested, it was the ONLY PM slot released at all (7-8 and 8-9 PM were
+# not even in the list), so treating it as a real fallback instead of
+# aborting makes sense if that pattern repeats.
 PREFERRED_SLOTS = [
-    "8:00 PM - 9:00 PM",
-    "7:00 PM - 8:00 PM",
+    "08:00 PM - 09:00 PM",
+    "07:00 PM - 08:00 PM",
+    "09:00 PM - 10:00 PM",
 ]
 
 CLOCK_OFFSET = timedelta(0)  # Populated by sync_server_time()
+
+
+def normalize_slot_text(text: str) -> str:
+    """
+    Normalizes a slot label for robust comparison:
+    - collapses all dash variants (-, --, en dash, em dash) to a single '-'
+    - collapses all whitespace runs to a single space
+    - zero-pads a leading single-digit hour (e.g. '8:00 PM' -> '08:00 PM')
+    - strips leading/trailing whitespace
+    This avoids the exact-match bug where '8:00 PM - 9:00 PM' never matched
+    the real dropdown text '08:00 PM - 09:00 PM'.
+    """
+    if not text:
+        return ""
+    t = text.strip()
+    t = re.sub(r"[\u2010-\u2015\u2212]", "-", t)  # normalize dash variants
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"\s*-\s*", " - ", t)
+    # zero-pad single-digit hour at start of a time token, e.g. "8:00" -> "08:00"
+    t = re.sub(r"(?<!\d)(\d):(\d{2})", r"0\1:\2", t)
+    return t.strip()
 
 
 async def sync_server_time():
@@ -180,23 +212,30 @@ async def main():
             await time_dropdown.wait_for(state="visible", timeout=10000)
             await time_dropdown.click()
 
-            # Log every visible slot so we see the full list in GitHub Actions
+            # Log every visible slot (raw text) so the full list is always in
+            # the Actions log, and also build a normalized lookup map so
+            # matching doesn't depend on exact punctuation/padding.
             all_slot_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-            all_slots_text = [(await el.text_content()).strip() for el in await all_slot_items.all()]
-            print(f"All visible time slots tonight: {all_slots_text}", flush=True)
+            all_elements = await all_slot_items.all()
+            raw_texts = [(await el.text_content()).strip() for el in all_elements]
+            print(f"All visible time slots tonight: {raw_texts}", flush=True)
+
+            normalized_to_element = {}
+            for el, raw in zip(all_elements, raw_texts):
+                norm = normalize_slot_text(raw)
+                if norm and norm not in normalized_to_element:
+                    normalized_to_element[norm] = el
 
             selected_slot_label = None
+            matched_element = None
             for slot_label in PREFERRED_SLOTS:
-                # Strictly match exact full slot label (e.g., '8:00 PM - 9:00 PM')
-                slot_locator = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible").filter(has_text=slot_label)
-                if await slot_locator.count() > 0:
-                    matched_el = slot_locator.first
-                    exact_text = (await matched_el.text_content()).strip()
-                    if exact_text == slot_label:
-                        selected_slot_label = slot_label
-                        print(f"Selecting exact preferred slot: {slot_label}...", flush=True)
-                        await matched_el.click()
-                        break
+                norm_target = normalize_slot_text(slot_label)
+                if norm_target in normalized_to_element:
+                    selected_slot_label = slot_label
+                    matched_element = normalized_to_element[norm_target]
+                    print(f"Selecting preferred slot (normalized match): {slot_label}...", flush=True)
+                    await matched_element.click()
+                    break
 
             if not selected_slot_label:
                 print(f"None of preferred slots {PREFERRED_SLOTS} available. Aborting booking.", flush=True)
@@ -211,8 +250,11 @@ async def main():
             print(f"Clicked 'Book now' for {selected_slot_label}. Waiting for confirmation...", flush=True)
 
             # --- Explicit success/failure detection ---
+            # "Submitted" confirmed as real confirmation text from last
+            # night's actual successful booking log line:
+            #   "CONFIRMED: Submitted Date — slot: ..."
             success_locator = page.locator(
-                "text=/booking confirmed|successfully booked|booking successful|success|confirmed|thank you|submitted|completed/i"
+                "text=/booking confirmed|successfully booked|booking successful|submitted|thank you|completed/i"
             )
             error_locator = page.locator(
                 "text=/already booked|no longer available|slot unavailable|failed|error/i"

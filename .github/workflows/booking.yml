@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '45 19 * * *' # Runs daily at 11:45 PM GST (19:45 UTC)
+    - cron: '45 19 * * *'
 
 jobs:
   book-court:

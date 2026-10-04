@@ -1,4 +1,4 @@
-Name: Book Court
+name: Book Court
 
 on:
   workflow_dispatch:

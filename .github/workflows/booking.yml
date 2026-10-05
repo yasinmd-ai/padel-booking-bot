@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '45 19 * * *'
+    - cron: '38 19 * * *' # Fires at 11:38 PM GST to beat the queue rush safely
 
 jobs:
   book-court:

@@ -73,10 +73,11 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await page.wait_for_selector("#userName", timeout=20000)
         await page.fill("#userName", USERNAME)
         await page.fill("input[type='password']", PASSWORD)
+        await page.wait_for_timeout(300)
         await page.locator("button.button__primary:has-text('Sign in')").click()
-        await page.wait_for_selector("a:has-text('New booking')", timeout=15000)
+        await page.wait_for_timeout(4000)
 
-        # Amenity Page
+        # Amenity Page (Direct jump post-login, bypassing dashboard wait)
         await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
         new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
         await new_booking_btn.wait_for(state="visible", timeout=30000)

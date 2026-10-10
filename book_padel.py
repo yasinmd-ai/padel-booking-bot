@@ -52,14 +52,17 @@ async def wait_for_exact_midnight():
     if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:
         today_midnight += timedelta(days=1)
 
-    target_time = today_midnight - timedelta(milliseconds=200) # Fire 200ms early to account for network transmission
+    target_time = today_midnight - timedelta(milliseconds=200) # Fire 200ms early
     wait_seconds = (target_time - gst_now).total_seconds()
     if wait_seconds > 0:
         await asyncio.sleep(wait_seconds)
     print(f"[{synced_now_gst():%H:%M:%S.%f} GST] Midnight target reached! Firing execution...", flush=True)
 
 
-async def book_court_target(p, task_id, court_name, target_time_code, target_time_label):
+async def book_court_target(p, task_id, court_name, target_time_code, target_time_label, start_delay=0):
+    if start_delay > 0:
+        await asyncio.sleep(start_delay)
+
     browser = await p.chromium.launch(headless=True)
     context = await browser.new_context()
     page = await context.new_page()
@@ -73,11 +76,10 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await page.wait_for_selector("#userName", timeout=20000)
         await page.fill("#userName", USERNAME)
         await page.fill("input[type='password']", PASSWORD)
-        await page.wait_for_timeout(300)
         await page.locator("button.button__primary:has-text('Sign in')").click()
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(3000)
 
-        # Amenity Page (Direct jump post-login, bypassing dashboard wait)
+        # Amenity Page
         await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
         new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
         await new_booking_btn.wait_for(state="visible", timeout=30000)
@@ -104,22 +106,18 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await proceed_btn.wait_for(state="visible", timeout=5000)
         await proceed_btn.click(force=True)
 
-        # Select Date dropdown
+        # Select Date dropdown with retry fallback
         date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
         await date_dropdown.wait_for(state="visible", timeout=10000)
         await date_dropdown.click(force=True)
 
-        date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]:visible")
-        await date_items.last.wait_for(state="visible", timeout=10000)
+        date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
         
-        selected_date_text = (await date_items.last.text_content()).strip()
-        print(f"[{task_id}] Target date dropdown value: '{selected_date_text}'", flush=True)
-        
-        # Weekend Check
-        if "sat" in selected_date_text.lower() or "sun" in selected_date_text.lower():
-            print(f"[{task_id}] Weekend detected ({selected_date_text}). Skipping booking!", flush=True)
-            await browser.close()
-            return False
+        # Poll for dropdown items to appear under midnight load
+        for _ in range(20):
+            if await date_items.count() > 0:
+                break
+            await asyncio.sleep(0.1)
 
         await date_items.last.click(force=True)
 
@@ -128,7 +126,13 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await time_dropdown.wait_for(state="visible", timeout=10000)
         await time_dropdown.click(force=True)
 
-        slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:visible:has-text('{target_time_code}')")
+        slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:has-text('{target_time_code}')")
+        
+        for _ in range(20):
+            if await slot_locator.count() > 0:
+                break
+            await asyncio.sleep(0.1)
+
         if await slot_locator.count() > 0:
             await slot_locator.first.click(force=True)
             print(f"[{task_id}] Selected slot: {target_time_code} ({target_time_label})", flush=True)
@@ -170,8 +174,8 @@ async def main():
 
     async with async_playwright() as p:
         results = await asyncio.gather(
-            book_court_target(p, "Court1", "D2 Sports Town - Paddle Court 1", "07:00 PM", "7:00 PM - 8:00 PM"),
-            book_court_target(p, "Court2", "D2 Sports Town - Paddle Court 2", "08:00 PM", "8:00 PM - 9:00 PM")
+            book_court_target(p, "Court1", "D2 Sports Town - Paddle Court 1", "07:00 PM", "7:00 PM - 8:00 PM", start_delay=0),
+            book_court_target(p, "Court2", "D2 Sports Town - Paddle Court 2", "08:00 PM", "8:00 PM - 9:00 PM", start_delay=4)
         )
 
         if any(results):

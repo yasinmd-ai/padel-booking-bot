@@ -106,40 +106,35 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await proceed_btn.wait_for(state="visible", timeout=5000)
         await proceed_btn.click(force=True)
 
-        # Select Date dropdown with retry fallback
+        # Select Date dropdown
         date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
         await date_dropdown.wait_for(state="visible", timeout=10000)
         await date_dropdown.click(force=True)
 
-        date_items = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]")
+        # Target the last dropdown item (furthest future date) securely with built-in retry
+        date_item = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]").last
+        await date_item.wait_for(state="visible", timeout=10000)
         
-        # Poll for dropdown items to appear under midnight load
-        for _ in range(20):
-            if await date_items.count() > 0:
-                break
-            await asyncio.sleep(0.1)
+        selected_date_text = (await date_item.text_content()).strip()
+        print(f"[{task_id}] Target date dropdown value: '{selected_date_text}'", flush=True)
+        
+        # Weekend Check
+        if "sat" in selected_date_text.lower() or "sun" in selected_date_text.lower():
+            print(f"[{task_id}] Weekend detected ({selected_date_text}). Skipping booking!", flush=True)
+            await browser.close()
+            return False
 
-        await date_items.last.click(force=True)
+        await date_item.click(force=True)
 
         # Select Time Slot dropdown
         time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
         await time_dropdown.wait_for(state="visible", timeout=10000)
         await time_dropdown.click(force=True)
 
-        slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:has-text('{target_time_code}')")
-        
-        for _ in range(20):
-            if await slot_locator.count() > 0:
-                break
-            await asyncio.sleep(0.1)
-
-        if await slot_locator.count() > 0:
-            await slot_locator.first.click(force=True)
-            print(f"[{task_id}] Selected slot: {target_time_code} ({target_time_label})", flush=True)
-        else:
-            print(f"[{task_id}] Slot {target_time_code} not available.", flush=True)
-            await browser.close()
-            return False
+        slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:has-text('{target_time_code}')").first
+        await slot_locator.wait_for(state="visible", timeout=10000)
+        await slot_locator.click(force=True)
+        print(f"[{task_id}] Selected slot: {target_time_code} ({target_time_label})", flush=True)
 
         # Confirm Booking instantly
         book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
@@ -175,7 +170,7 @@ async def main():
     async with async_playwright() as p:
         results = await asyncio.gather(
             book_court_target(p, "Court1", "D2 Sports Town - Paddle Court 1", "07:00 PM", "7:00 PM - 8:00 PM", start_delay=0),
-            book_court_target(p, "Court2", "D2 Sports Town - Paddle Court 2", "08:00 PM", "8:00 PM - 9:00 PM", start_delay=4)
+            book_court_target(p, "Court2", "D2 Sports Town - Paddle Court 2", "08:00 PM", "8:00 PM - 9:00 PM", start_delay=3)
         )
 
         if any(results):

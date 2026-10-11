@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       test_mode:
-        description: 'Run in test mode (skip midnight wait, target +2 days)'
+        description: 'Run in test mode (skip midnight wait)'
         required: false
         type: boolean
         default: false
   schedule:
-    - cron: '38 19 * * *' # Fires at 11:38 PM GST to beat the queue rush safely
+    - cron: '38 19 * * *' # Fires at 11:38 PM GST
 
 jobs:
   book-court:

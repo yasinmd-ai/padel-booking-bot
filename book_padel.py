@@ -59,17 +59,14 @@ async def wait_for_exact_midnight():
     print(f"[{synced_now_gst():%H:%M:%S.%f} GST] Midnight target reached! Firing execution...", flush=True)
 
 
-async def book_court_target(p, task_id, court_name, target_time_code, target_time_label, start_delay=0):
-    if start_delay > 0:
-        await asyncio.sleep(start_delay)
-
+async def book_court_target(p, court_name, target_time_code, target_time_label):
     browser = await p.chromium.launch(headless=True)
     context = await browser.new_context()
     page = await context.new_page()
     booking_success = False
 
     try:
-        print(f"[{task_id}] Navigating to Damac Living...", flush=True)
+        print(f"[Court2] Navigating to Damac Living...", flush=True)
         await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
 
         # Login
@@ -96,7 +93,7 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await next_btn.wait_for(state="visible", timeout=15000)
         await next_btn.click()
 
-        print(f"[{task_id}] {court_name} prepped. Holding for midnight...", flush=True)
+        print(f"[Court2] {court_name} prepped. Holding for midnight...", flush=True)
 
         # Hold until exact midnight release
         await wait_for_exact_midnight()
@@ -111,7 +108,7 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await date_dropdown.wait_for(state="visible", timeout=10000)
         await date_dropdown.click(force=True)
 
-        # Use JavaScript evaluation to directly grab and click the last dropdown item without waiting for rigid locators
+        # Use JavaScript evaluation to directly grab and click the last dropdown item
         date_selected = await page.evaluate('''() => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
             if (items.length > 0) {
@@ -122,10 +119,10 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
             return null;
         }''')
 
-        print(f"[{task_id}] Target date selected via JS: '{date_selected}'", flush=True)
+        print(f"[Court2] Target date selected via JS: '{date_selected}'", flush=True)
         
         if not date_selected or "sat" in date_selected.lower() or "sun" in date_selected.lower():
-            print(f"[{task_id}] Weekend or invalid date detected. Skipping!", flush=True)
+            print(f"[Court2] Weekend or invalid date detected. Skipping!", flush=True)
             await browser.close()
             return False
 
@@ -135,11 +132,53 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await time_dropdown.click(force=True)
 
         # Use JavaScript evaluation to pick the exact time slot safely
-        time_selected = await page.evaluate(f'''(timeCode) => {{
+        time_selected = await page.evaluate('''async (timeCode) => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
-            for (const item of items) {{
-                if (item.innerText.includes(timeCode)) {{
+            for (const item of items) {
+                if (item.innerText.includes(timeCode)) {
                     item.click();
                     return item.innerText.trim();
-                }}
-            
+                }
+            }
+            return null;
+        }''', target_time_code)
+
+        print(f"[Court2] Selected slot via JS: {time_selected}", flush=True)
+        if not time_selected:
+            print(f"[Court2] Slot {target_time_code} not available.", flush=True)
+            await browser.close()
+            return False
+
+        # Confirm Booking instantly
+        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
+        await book_now_btn.wait_for(state="visible", timeout=5000)
+        await book_now_btn.click(force=True)
+        print(f"[Court2] Clicked 'Book now'!", flush=True)
+
+        await page.wait_for_timeout(2000)
+        success_locator = page.locator("text=/booking confirmed|successfully booked|booking successful/i")
+        if await success_locator.count() > 0:
+            booking_success = True
+            print(f"[Court2] SUCCESS: Booked successfully!", flush=True)
+        else:
+            print(f"[Court2] Submitted, checking result.", flush=True)
+
+        await page.screenshot(path="booking_result_Court2.png")
+
+    except Exception as e:
+        print(f"[Court2] Error: {e}", flush=True)
+        try:
+            await page.screenshot(path="booking_result_Court2_error.png")
+        except:
+            pass
+
+    await browser.close()
+    return booking_success
+
+
+async def main():
+    await sync_server_time()
+    await sleep_until_pre_booking_time()
+
+    async with async_playwright() as p:
+        success = await book_

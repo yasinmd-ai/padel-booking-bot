@@ -106,77 +106,40 @@ async def book_court_target(p, task_id, court_name, target_time_code, target_tim
         await proceed_btn.wait_for(state="visible", timeout=5000)
         await proceed_btn.click(force=True)
 
-        # Select Date dropdown
+        # Select Date dropdown - click toggle
         date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
         await date_dropdown.wait_for(state="visible", timeout=10000)
         await date_dropdown.click(force=True)
 
-        # Target the last dropdown item (furthest future date) securely with built-in retry
-        date_item = page.locator("a.dropdown-item[data-rr-ui-dropdown-item]").last
-        await date_item.wait_for(state="visible", timeout=10000)
+        # Use JavaScript evaluation to directly grab and click the last dropdown item without waiting for rigid locators
+        date_selected = await page.evaluate('''() => {
+            const items = Array.from(document.querySelectorAll("a.dropdown-item"));
+            if (items.length > 0) {
+                const target = items[items.length - 1];
+                target.click();
+                return target.innerText.trim();
+            }
+            return null;
+        }''')
+
+        print(f"[{task_id}] Target date selected via JS: '{date_selected}'", flush=True)
         
-        selected_date_text = (await date_item.text_content()).strip()
-        print(f"[{task_id}] Target date dropdown value: '{selected_date_text}'", flush=True)
-        
-        # Weekend Check
-        if "sat" in selected_date_text.lower() or "sun" in selected_date_text.lower():
-            print(f"[{task_id}] Weekend detected ({selected_date_text}). Skipping booking!", flush=True)
+        if not date_selected or "sat" in date_selected.lower() or "sun" in date_selected.lower():
+            print(f"[{task_id}] Weekend or invalid date detected. Skipping!", flush=True)
             await browser.close()
             return False
 
-        await date_item.click(force=True)
-
-        # Select Time Slot dropdown
+        # Select Time Slot dropdown - click toggle
         time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
         await time_dropdown.wait_for(state="visible", timeout=10000)
         await time_dropdown.click(force=True)
 
-        slot_locator = page.locator(f"a.dropdown-item[data-rr-ui-dropdown-item]:has-text('{target_time_code}')").first
-        await slot_locator.wait_for(state="visible", timeout=10000)
-        await slot_locator.click(force=True)
-        print(f"[{task_id}] Selected slot: {target_time_code} ({target_time_label})", flush=True)
-
-        # Confirm Booking instantly
-        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
-        await book_now_btn.wait_for(state="visible", timeout=5000)
-        await book_now_btn.click(force=True)
-        print(f"[{task_id}] Clicked 'Book now'!", flush=True)
-
-        await page.wait_for_timeout(2000)
-        success_locator = page.locator("text=/booking confirmed|successfully booked|booking successful/i")
-        if await success_locator.count() > 0:
-            booking_success = True
-            print(f"[{task_id}] SUCCESS: Booked successfully!", flush=True)
-        else:
-            print(f"[{task_id}] Submitted, checking result.", flush=True)
-
-        await page.screenshot(path=f"booking_result_{task_id}.png")
-
-    except Exception as e:
-        print(f"[{task_id}] Error: {e}", flush=True)
-        try:
-            await page.screenshot(path=f"booking_result_{task_id}_error.png")
-        except:
-            pass
-
-    await browser.close()
-    return booking_success
-
-
-async def main():
-    await sync_server_time()
-    await sleep_until_pre_booking_time()
-
-    async with async_playwright() as p:
-        results = await asyncio.gather(
-            book_court_target(p, "Court1", "D2 Sports Town - Paddle Court 1", "07:00 PM", "7:00 PM - 8:00 PM", start_delay=0),
-            book_court_target(p, "Court2", "D2 Sports Town - Paddle Court 2", "08:00 PM", "8:00 PM - 9:00 PM", start_delay=3)
-        )
-
-        if any(results):
-            print("OVERALL: AT LEAST ONE COURT SECURED!", flush=True)
-        else:
-            print("OVERALL: NO COURTS SECURED (Either taken, weekend, or error).", flush=True)
-
-
-asyncio.run(main())
+        # Use JavaScript evaluation to pick the exact time slot safely
+        time_selected = await page.evaluate(f'''(timeCode) => {{
+            const items = Array.from(document.querySelectorAll("a.dropdown-item"));
+            for (const item of items) {{
+                if (item.innerText.includes(timeCode)) {{
+                    item.click();
+                    return item.innerText.trim();
+                }}
+            

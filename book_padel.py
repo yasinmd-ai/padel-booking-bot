@@ -181,4 +181,17 @@ async def main():
     await sleep_until_pre_booking_time()
 
     async with async_playwright() as p:
-        success = await book_
+        success = await book_court_target(
+            p, 
+            court_name="D2 Sports Town - Paddle Court 2", 
+            target_time_code="07:00 PM", 
+            target_time_label="7:00 PM - 8:00 PM"
+        )
+
+        if success:
+            print("OVERALL: COURT SECURED SUCCESSFULLY!", flush=True)
+        else:
+            print("OVERALL: COURT NOT SECURED (Either taken, weekend, or error).", flush=True)
+
+
+asyncio.run(main())

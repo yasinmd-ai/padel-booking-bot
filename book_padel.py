@@ -6,6 +6,7 @@ import aiohttp
 
 USERNAME = os.getenv("DAMAC_USERNAME")
 PASSWORD = os.getenv("DAMAC_PASSWORD")
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 DIRECT_AMENITY_URL = "https://www.damacliving.com/requests/residency/book-amenity?unit_id=a0x07000008cDwoAAE"
 
@@ -32,6 +33,10 @@ def synced_now_gst():
 
 
 async def sleep_until_pre_booking_time():
+    if TEST_MODE:
+        print("[TEST MODE] Skipping pre-booking sleep.", flush=True)
+        return
+
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = today_midnight + timedelta(days=1)
@@ -47,6 +52,10 @@ async def sleep_until_pre_booking_time():
 
 
 async def wait_for_exact_midnight():
+    if TEST_MODE:
+        print("[TEST MODE] Skipping midnight hold.", flush=True)
+        return
+
     gst_now = synced_now_gst()
     today_midnight = gst_now.replace(hour=0, minute=0, second=0, microsecond=0)
     if gst_now >= today_midnight and (gst_now - today_midnight).total_seconds() > 600:

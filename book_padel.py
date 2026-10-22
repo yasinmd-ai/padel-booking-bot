@@ -68,7 +68,7 @@ async def wait_for_exact_midnight():
     print(f"[{synced_now_gst():%H:%M:%S.%f} GST] Midnight target reached! Firing execution...", flush=True)
 
 
-async def book_court_target(p, court_name, target_time_code, target_time_label):
+async def book_court_target(p, court_name, target_time_code):
     browser = await p.chromium.launch(headless=True)
     context = await browser.new_context()
     page = await context.new_page()
@@ -85,19 +85,23 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
         await page.locator("button.button__primary:has-text('Sign in')").click()
         await page.wait_for_timeout(3000)
 
-        # Direct Amenity Page (Bypasses "New booking" button since unit_id is specified)
-        print(f"[Court2] Navigating directly to amenity URL...", flush=True)
+        # Amenity Page via Direct URL
+        print(f"[Court2] Navigating to amenity URL...", flush=True)
         await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
         
-        # Wait directly for modal/court options to load
-        await page.wait_for_selector(".modal-body, .card, body", timeout=15000)
-        await page.wait_for_timeout(2000)
+        # Click "New booking" if present on the direct amenity landing page
+        try:
+            new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
+            if await new_booking_btn.is_visible(timeout=5000):
+                await new_booking_btn.click()
+        except:
+            pass
+
+        # Wait for modal body where court options reside (same as Court 1 logic)
+        await page.wait_for_selector(".modal-body", timeout=15000)
         
-        # Select Court
-        court_option = page.locator("get_by_text, .modal-body").get_by_text(court_name, exact=True)
-        if await court_option.count() == 0:
-            court_option = page.get_by_text(court_name, exact=True)
-            
+        # Select Court 2 exactly like we did for Court 1
+        court_option = page.locator(".modal-body").get_by_text(court_name, exact=True)
         await court_option.wait_for(state="visible", timeout=15000)
         await court_option.click(force=True)
 
@@ -115,21 +119,12 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
         await proceed_btn.wait_for(state="visible", timeout=15000)
         await proceed_btn.click(force=True)
 
-        # Wait for booking form elements to settle
-        await page.wait_for_timeout(2000)
+        # Select Date dropdown - click toggle
+        date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
+        await date_dropdown.wait_for(state="visible", timeout=10000)
+        await date_dropdown.click(force=True)
 
-        # Resilient Date Dropdown Clicker via JS
-        print("[Court2] Opening Date dropdown via JS...", flush=True)
-        await page.evaluate('''() => {
-            const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle, div[title='Date'] a"));
-            if (toggles.length > 0) {
-                toggles[0].click();
-            }
-        }''')
-
-        await page.wait_for_timeout(1000)
-
-        # Select the last item in the date dropdown (the newly opened date)
+        # Use JavaScript evaluation to directly grab and click the last dropdown item
         date_selected = await page.evaluate('''() => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
             if (items.length > 0) {
@@ -147,21 +142,12 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
             await browser.close()
             return False
 
-        # Resilient Time Slot Dropdown Clicker via JS
-        print("[Court2] Opening Time dropdown via JS...", flush=True)
-        await page.wait_for_timeout(1000)
-        await page.evaluate('''() => {
-            const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle, div[title='Time'] a"));
-            if (toggles.length > 1) {
-                toggles[1].click();
-            } else if (toggles.length > 0) {
-                toggles[0].click();
-            }
-        }''')
+        # Select Time Slot dropdown - click toggle
+        time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
+        await time_dropdown.wait_for(state="visible", timeout=10000)
+        await time_dropdown.click(force=True)
 
-        await page.wait_for_timeout(1000)
-
-        # Pick the exact time slot safely
+        # Use JavaScript evaluation to pick the exact time slot safely
         time_selected = await page.evaluate('''async (timeCode) => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
             for (const item of items) {
@@ -180,12 +166,12 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
             return False
 
         # Confirm Booking instantly
-        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now'), button:has-text('Book now')").first
+        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
         await book_now_btn.wait_for(state="visible", timeout=5000)
         await book_now_btn.click(force=True)
         print(f"[Court2] Clicked 'Book now'!", flush=True)
 
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2000)
         success_locator = page.locator("text=/booking confirmed|successfully booked|booking successful/i")
         if await success_locator.count() > 0:
             booking_success = True
@@ -214,8 +200,7 @@ async def main():
         success = await book_court_target(
             p, 
             court_name="D2 Sports Town - Paddle Court 2", 
-            target_time_code="07:00 PM", 
-            target_time_label="7:00 PM - 8:00 PM"
+            target_time_code="07:00 PM"
         )
 
         if success:

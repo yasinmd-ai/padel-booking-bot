@@ -32,7 +32,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install playwright aiohttp
-          playwright install --with-deps chromium
+          playwright install chromium
 
       - name: Syntax check
         run: python -m py_compile book_padel.py

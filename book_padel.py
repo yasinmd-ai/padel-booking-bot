@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 import aiohttp
@@ -154,10 +155,18 @@ async def book_court_target(p, court_name, target_time_code):
         await wait_for_exact_midnight()
 
         # STEP 5: Proceed to Booking
+        print(f"[STEP 5] Inspecting visible buttons before 'Proceed to booking'...", flush=True)
+        buttons = await page.evaluate('''() => Array.from(document.querySelectorAll("button, a.button__primary"))
+            .filter(b => b.offsetParent !== null)
+            .map(b => (b.innerText || "").trim())''')
+        print(f"[STEP 5] Visible buttons: {buttons}", flush=True)
+        await page.screenshot(path="04_before_proceed.png")
+
         print(f"[STEP 5] Clicking 'Proceed to booking'...", flush=True)
         proceed_btn = page.locator("button:has-text('Proceed to booking')")
         await proceed_btn.wait_for(state="visible", timeout=15000)
         await proceed_btn.click(force=True)
+        print(f"[STEP 5] Clicked 'Proceed to booking' successfully!", flush=True)
 
         await page.wait_for_timeout(2000)
 
@@ -218,7 +227,7 @@ async def book_court_target(p, court_name, target_time_code):
 
         # DRY RUN check
         if DRY_RUN:
-            print("[DRY RUN] Stopping before final 'Book now' click.", flush=True)
+            print("[DRY RUN] Stopping before final 'Book now' click. Dry run successful!", flush=True)
             await page.screenshot(path="booking_result_Court2.png")
             await browser.close()
             return True
@@ -242,8 +251,11 @@ async def book_court_target(p, court_name, target_time_code):
 
     except Exception as e:
         print(f"[ERROR] Exception during execution: {e}", flush=True)
+        traceback.print_exc()
         try:
             await page.screenshot(path="booking_result_Court2_error.png")
+            with open("error_page.html", "w") as f:
+                f.write(await page.content())
         except:
             pass
 

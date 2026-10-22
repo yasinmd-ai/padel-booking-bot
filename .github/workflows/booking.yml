@@ -7,13 +7,19 @@ on:
         description: 'Run in test mode (skip midnight wait)'
         required: false
         type: boolean
-        default: false
+        default: true
+      dry_run:
+        description: 'Run in dry run mode (stop before final click)'
+        required: false
+        type: boolean
+        default: true
   schedule:
-    - cron: '0 18 * * *' # Fires at 18:00 UTC (10:00 PM GST) for safe GitHub runner queue buffers
+    - cron: '30 19 * * *' # 11:30 PM GST buffer
 
 jobs:
   book-court:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -28,11 +34,15 @@ jobs:
           pip install playwright aiohttp
           playwright install chromium
 
+      - name: Syntax check
+        run: python -m py_compile book_padel.py
+
       - name: Execute Booking API Script
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
-          TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+          TEST_MODE: ${{ github.event.inputs.test_mode || 'true' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
         run: python book_padel.py
 
       - name: Upload screenshots
@@ -41,3 +51,4 @@ jobs:
         with:
           name: booking-screenshots
           path: "*.png"
+          if-no-files-found: ignore

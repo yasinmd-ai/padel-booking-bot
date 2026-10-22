@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 import aiohttp
@@ -75,30 +76,33 @@ async def book_court_target(p, court_name, target_time_code):
     booking_success = False
 
     try:
-        print(f"[Court2] Navigating to Damac Living...", flush=True)
+        print(f"[STEP 0] Navigating to Damac Living login page...", flush=True)
         await page.goto("https://damacliving.com", wait_until="domcontentloaded", timeout=30000)
 
-        # 0. Login
+        # Login
         await page.wait_for_selector("#userName", timeout=20000)
+        print(f"[STEP 0] Entering credentials for {USERNAME[:3]}...", flush=True)
         await page.fill("#userName", USERNAME)
         await page.fill("input[type='password']", PASSWORD)
         await page.locator("button.button__primary:has-text('Sign in')").click()
         await page.wait_for_timeout(3000)
+        print(f"[STEP 0] Logged in successfully!", flush=True)
 
-        # 1. Book Amenity (Direct URL)
+        # 1. Book Amenity
         print(f"[STEP 1] Navigating to Book Amenity page...", flush=True)
         await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(2000)
 
         # 2. New Booking
-        print(f"[STEP 2] Clicking 'New booking'...", flush=True)
+        print(f"[STEP 2] Looking for 'New booking' button...", flush=True)
         new_booking_btn = page.locator("a.button__primary:has-text('New booking'), button:has-text('New booking'), a:has-text('New booking')").first
         await new_booking_btn.wait_for(state="visible", timeout=20000)
         await new_booking_btn.click()
+        print(f"[STEP 2] Clicked 'New booking'!", flush=True)
 
-        # Wait for modal body to appear
         await page.wait_for_selector(".modal-body", timeout=15000)
 
-        # 3. Selecting the Court
+        # 3. Selecting Court 2
         print(f"[STEP 3] Selecting court: '{court_name}'...", flush=True)
         court_option = page.locator(".modal-body").get_by_text(court_name, exact=True)
         if await court_option.count() == 0:
@@ -106,12 +110,14 @@ async def book_court_target(p, court_name, target_time_code):
             
         await court_option.wait_for(state="visible", timeout=15000)
         await court_option.click(force=True)
+        print(f"[STEP 3] Selected {court_name}!", flush=True)
 
         # 4. Click Next
         print(f"[STEP 4] Clicking 'Next'...", flush=True)
         next_btn = page.locator("button.button__primary:has-text('Next'), button:has-text('Next')").first
         await next_btn.wait_for(state="visible", timeout=15000)
         await next_btn.click(force=True)
+        print(f"[STEP 4] Clicked 'Next'!", flush=True)
 
         print(f"[Court2] Prepped successfully. Holding for midnight...", flush=True)
 
@@ -126,7 +132,7 @@ async def book_court_target(p, court_name, target_time_code):
 
         await page.wait_for_timeout(2000)
 
-        # 6. Selecting Date
+        # 6a. Selecting Date
         print(f"[STEP 6a] Selecting Date via JS...", flush=True)
         await page.evaluate('''() => {
             const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle"));
@@ -145,10 +151,10 @@ async def book_court_target(p, court_name, target_time_code):
             return null;
         }''')
 
-        print(f"[Court2] Target date selected via JS: '{date_selected}'", flush=True)
+        print(f"[STEP 6a] Target date selected via JS: '{date_selected}'", flush=True)
         
         if not date_selected or "sat" in date_selected.lower() or "sun" in date_selected.lower():
-            print(f"[Court2] Weekend or invalid date detected. Skipping!", flush=True)
+            print(f"[STEP 6a] Weekend or invalid date detected. Skipping!", flush=True)
             await browser.close()
             return False
 
@@ -173,9 +179,9 @@ async def book_court_target(p, court_name, target_time_code):
             return null;
         }''', target_time_code)
 
-        print(f"[Court2] Selected slot via JS: {time_selected}", flush=True)
+        print(f"[STEP 6b] Selected slot via JS: {time_selected}", flush=True)
         if not time_selected:
-            print(f"[Court2] Slot {target_time_code} not available.", flush=True)
+            print(f"[STEP 6b] Slot {target_time_code} not available.", flush=True)
             await browser.close()
             return False
 
@@ -184,7 +190,7 @@ async def book_court_target(p, court_name, target_time_code):
         book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now'), button:has-text('Book now')").first
         await book_now_btn.wait_for(state="visible", timeout=5000)
         await book_now_btn.click(force=True)
-        print(f"[Court2] Clicked 'Book now'!", flush=True)
+        print(f"[STEP 7] Clicked 'Book now'!", flush=True)
 
         await page.wait_for_timeout(3000)
         success_locator = page.locator("text=/booking confirmed|successfully booked|booking successful/i")
@@ -197,7 +203,7 @@ async def book_court_target(p, court_name, target_time_code):
         await page.screenshot(path="booking_result_Court2.png")
 
     except Exception as e:
-        print(f"[Court2] Error: {e}", flush=True)
+        print(f"[ERROR] Exception during execution: {e}", flush=True)
         try:
             await page.screenshot(path="booking_result_Court2_error.png")
         except:
@@ -208,8 +214,24 @@ async def book_court_target(p, court_name, target_time_code):
 
 
 async def main():
+    if not USERNAME or not PASSWORD:
+        print("[CRITICAL ERROR] DAMAC_USERNAME or DAMAC_PASSWORD environment variables are missing!", flush=True)
+        sys.exit(1)
+
     await sync_server_time()
     await sleep_until_pre_booking_time()
 
     async with async_playwright() as p:
-        success = await book_court_target
+        success = await book_court_target(
+            p, 
+            court_name="D2 Sports Town - Paddle Court 2", 
+            target_time_code="07:00 PM"
+        )
+
+        if success:
+            print("OVERALL: COURT SECURED SUCCESSFULLY!", flush=True)
+        else:
+            print("OVERALL: COURT NOT SECURED (Either taken, weekend, or error).", flush=True)
+
+
+asyncio.run(main())

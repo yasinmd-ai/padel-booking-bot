@@ -85,16 +85,19 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
         await page.locator("button.button__primary:has-text('Sign in')").click()
         await page.wait_for_timeout(3000)
 
-        # Amenity Page
+        # Direct Amenity Page (Bypasses "New booking" button since unit_id is specified)
+        print(f"[Court2] Navigating directly to amenity URL...", flush=True)
         await page.goto(DIRECT_AMENITY_URL, wait_until="domcontentloaded", timeout=30000)
-        new_booking_btn = page.locator("a.button__primary:has-text('New booking'), a:has-text('New booking')").first
-        await new_booking_btn.wait_for(state="visible", timeout=30000)
-        await new_booking_btn.click()
-
-        await page.wait_for_selector(".modal-body", timeout=15000)
+        
+        # Wait directly for modal/court options to load
+        await page.wait_for_selector(".modal-body, .card, body", timeout=15000)
+        await page.wait_for_timeout(2000)
         
         # Select Court
-        court_option = page.locator(".modal-body").get_by_text(court_name, exact=True)
+        court_option = page.locator("get_by_text, .modal-body").get_by_text(court_name, exact=True)
+        if await court_option.count() == 0:
+            court_option = page.get_by_text(court_name, exact=True)
+            
         await court_option.wait_for(state="visible", timeout=15000)
         await court_option.click(force=True)
 
@@ -117,22 +120,16 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
 
         # Resilient Date Dropdown Clicker via JS
         print("[Court2] Opening Date dropdown via JS...", flush=True)
-        date_opened = await page.evaluate('''() => {
+        await page.evaluate('''() => {
             const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle, div[title='Date'] a"));
             if (toggles.length > 0) {
                 toggles[0].click();
-                return true;
             }
-            return false;
         }''')
-
-        if not date_opened:
-            print("[Court2] Retrying Date toggle click...", flush=True)
-            await page.locator(".dropdown-toggle").first.click(force=True)
 
         await page.wait_for_timeout(1000)
 
-        # Use JavaScript evaluation to directly grab and click the last dropdown item
+        # Select the last item in the date dropdown (the newly opened date)
         date_selected = await page.evaluate('''() => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
             if (items.length > 0) {
@@ -164,7 +161,7 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
 
         await page.wait_for_timeout(1000)
 
-        # Use JavaScript evaluation to pick the exact time slot safely
+        # Pick the exact time slot safely
         time_selected = await page.evaluate('''async (timeCode) => {
             const items = Array.from(document.querySelectorAll("a.dropdown-item"));
             for (const item of items) {

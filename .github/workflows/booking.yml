@@ -4,17 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       test_mode:
-        description: 'Run in test mode (skip midnight wait)'
+        description: 'Test mode (skip the midnight wait)'
         required: false
         type: boolean
         default: true
       dry_run:
-        description: 'Run in dry run mode (stop before final click)'
+        description: 'Dry run (stop before the final Book now click)'
         required: false
         type: boolean
         default: true
   schedule:
-    - cron: '30 19 * * *' # 11:30 PM GST buffer
+    - cron: '30 19 * * *'   # 11:30 PM GST (19:30 UTC)
 
 jobs:
   book-court:
@@ -32,17 +32,18 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install playwright aiohttp
-          playwright install chromium
+          playwright install --with-deps chromium
 
       - name: Syntax check
         run: python -m py_compile book_padel.py
 
-      - name: Execute Booking API Script
+      - name: Execute Booking Script
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
           TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          PYTHONUNBUFFERED: '1'
         run: python book_padel.py
 
       - name: Upload screenshots & HTML

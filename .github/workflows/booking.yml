@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '0 19 * * *' # Fires at 19:00 UTC (11:00 PM GST)
+    - cron: '0 18 * * *' # Fires at 18:00 UTC (10:00 PM GST) for safe GitHub runner queue buffers
 
 jobs:
   book-court:
@@ -34,3 +34,10 @@ jobs:
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
           TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
         run: python book_padel.py
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-screenshots
+          path: "*.png"

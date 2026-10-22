@@ -227,8 +227,11 @@ async def book_court_target(p):
         await page.fill("#userName", USERNAME)
         await page.fill("input[type='password']", PASSWORD)
         await page.locator("button.button__primary:has-text('Sign in')").click()
-        await page.wait_for_url(lambda u: "login" not in u.lower(), timeout=30000)
-        await page.wait_for_load_state("networkidle", timeout=30000)
+
+        # NOTE: no "networkidle" here. The dashboard polls in the background and never goes idle.
+        # Instead, wait for something that only exists once logged in.
+        print("[STEP 0] Waiting for dashboard (Book Amenity tile)...", flush=True)
+        await page.get_by_text("Book Amenity", exact=False).first.wait_for(state="visible", timeout=45000)
         print("[STEP 0] Logged in successfully!", flush=True)
 
         # STEP 1: Book Amenity page

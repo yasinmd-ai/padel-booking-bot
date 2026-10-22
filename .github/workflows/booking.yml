@@ -41,14 +41,16 @@ jobs:
         env:
           DAMAC_USERNAME: ${{ secrets.DAMAC_USERNAME }}
           DAMAC_PASSWORD: ${{ secrets.DAMAC_PASSWORD }}
-          TEST_MODE: ${{ github.event.inputs.test_mode || 'true' }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+          TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: python book_padel.py
 
-      - name: Upload screenshots
+      - name: Upload screenshots & HTML
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: booking-screenshots
-          path: "*.png"
+          name: booking-debug-artifacts
+          path: |
+            *.png
+            *.html
           if-no-files-found: ignore

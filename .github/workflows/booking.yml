@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '38 19 * * *' # Fires at 11:38 PM GST
+    - cron: '0 19 * * *' # Fires at 19:00 UTC (11:00 PM GST) - gives GitHub runner 58 mins queue buffer
 
 jobs:
   book-court:

@@ -109,13 +109,28 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
 
         # Proceed instantly
         proceed_btn = page.locator("button:has-text('Proceed to booking')")
-        await proceed_btn.wait_for(state="visible", timeout=5000)
+        await proceed_btn.wait_for(state="visible", timeout=15000)
         await proceed_btn.click(force=True)
 
-        # Select Date dropdown - click toggle
-        date_dropdown = page.locator("div[title='Date'] a.dropdown-toggle")
-        await date_dropdown.wait_for(state="visible", timeout=10000)
-        await date_dropdown.click(force=True)
+        # Wait for booking form elements to settle
+        await page.wait_for_timeout(2000)
+
+        # Resilient Date Dropdown Clicker via JS
+        print("[Court2] Opening Date dropdown via JS...", flush=True)
+        date_opened = await page.evaluate('''() => {
+            const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle, div[title='Date'] a"));
+            if (toggles.length > 0) {
+                toggles[0].click();
+                return true;
+            }
+            return false;
+        }''')
+
+        if not date_opened:
+            print("[Court2] Retrying Date toggle click...", flush=True)
+            await page.locator(".dropdown-toggle").first.click(force=True)
+
+        await page.wait_for_timeout(1000)
 
         # Use JavaScript evaluation to directly grab and click the last dropdown item
         date_selected = await page.evaluate('''() => {
@@ -135,10 +150,19 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
             await browser.close()
             return False
 
-        # Select Time Slot dropdown - click toggle
-        time_dropdown = page.locator("div[title='Time'] a.dropdown-toggle")
-        await time_dropdown.wait_for(state="visible", timeout=10000)
-        await time_dropdown.click(force=True)
+        # Resilient Time Slot Dropdown Clicker via JS
+        print("[Court2] Opening Time dropdown via JS...", flush=True)
+        await page.wait_for_timeout(1000)
+        await page.evaluate('''() => {
+            const toggles = Array.from(document.querySelectorAll("a.dropdown-toggle, .dropdown-toggle, div[title='Time'] a"));
+            if (toggles.length > 1) {
+                toggles[1].click();
+            } else if (toggles.length > 0) {
+                toggles[0].click();
+            }
+        }''')
+
+        await page.wait_for_timeout(1000)
 
         # Use JavaScript evaluation to pick the exact time slot safely
         time_selected = await page.evaluate('''async (timeCode) => {
@@ -159,12 +183,12 @@ async def book_court_target(p, court_name, target_time_code, target_time_label):
             return False
 
         # Confirm Booking instantly
-        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now')")
+        book_now_btn = page.locator("button.button__primary[type='submit']:has-text('Book now'), button:has-text('Book now')").first
         await book_now_btn.wait_for(state="visible", timeout=5000)
         await book_now_btn.click(force=True)
         print(f"[Court2] Clicked 'Book now'!", flush=True)
 
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
         success_locator = page.locator("text=/booking confirmed|successfully booked|booking successful/i")
         if await success_locator.count() > 0:
             booking_success = True

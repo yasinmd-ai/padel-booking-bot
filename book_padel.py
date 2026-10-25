@@ -108,12 +108,13 @@ async def save_debug(page, name):
 TAG_DROPDOWNS_JS = (
     "() => {"
     "document.querySelectorAll('[data-bot-dd]').forEach(e => e.removeAttribute('data-bot-dd'));"
-    "const modal = document.querySelector('.modal.show, .modal.in, .modal[style*=\"display: block\"]');"
+    "const modal = document.querySelector('.modal.show, .modal.in, .modal[style*=\"display: block\"], .card, form');"
     "const root = modal || document.body;"
-    "const toggles = Array.from(root.querySelectorAll('select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"]'))"
+    "const selectors = 'select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"], [role=\"combobox\"], .form-control, .form-select, input[type=\"text\"], .dropdown';"
+    "const toggles = Array.from(root.querySelectorAll(selectors))"
     ".filter(e => !e.closest('header, nav, footer, .navbar') && e.offsetParent !== null);"
     "toggles.forEach((e, i) => e.setAttribute('data-bot-dd', String(i)));"
-    "return toggles.map((e, i) => ({ idx: i, tag: e.tagName, text: ((e.innerText || e.value || '') + '').trim().slice(0, 60) }));"
+    "return toggles.map((e, i) => ({ idx: i, tag: e.tagName, text: ((e.innerText || e.value || e.placeholder || '') + '').trim().slice(0, 60) }));"
     "}"
 )
 
@@ -124,9 +125,9 @@ async def tag_dropdowns(page):
 
 async def get_menu_items(page, toggle):
     container = toggle.locator("xpath=ancestor::*[contains(@class,'dropdown')][1]")
-    items = container.locator(".dropdown-menu a, .dropdown-menu button, .dropdown-menu .dropdown-item")
+    items = container.locator(".dropdown-menu a, .dropdown-menu button, .dropdown-menu .dropdown-item, [role='option']")
     if await items.count() == 0:
-        items = page.locator(".dropdown-menu.show a, .dropdown-menu.show button, .dropdown-menu.show .dropdown-item")
+        items = page.locator(".dropdown-menu.show a, .dropdown-menu.show button, .dropdown-menu.show .dropdown-item, [role='option']")
     return items
 
 
@@ -139,7 +140,7 @@ async def read_options(page, idx):
         return "select", [t for t in texts if t]
 
     await toggle.click()
-    await page.wait_for_timeout(250)
+    await page.wait_for_timeout(350)
     items = await get_menu_items(page, toggle)
     texts = []
     for i in range(await items.count()):
@@ -158,7 +159,7 @@ async def choose_option(page, idx, kind, wanted_text):
         return True
 
     await toggle.click()
-    await page.wait_for_timeout(250)
+    await page.wait_for_timeout(350)
     items = await get_menu_items(page, toggle)
     for i in range(await items.count()):
         if (await items.nth(i).inner_text()).strip() == wanted_text:

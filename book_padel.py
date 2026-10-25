@@ -108,13 +108,14 @@ async def save_debug(page, name):
 TAG_DROPDOWNS_JS = (
     "() => {"
     "document.querySelectorAll('[data-bot-dd]').forEach(e => e.removeAttribute('data-bot-dd'));"
-    "const modal = document.querySelector('.modal.show, .modal.in, .modal[style*=\"display: block\"], .card, form');"
-    "const root = modal || document.body;"
-    "const selectors = 'select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"], [role=\"combobox\"], .form-control, .form-select, input[type=\"text\"], .dropdown';"
-    "const toggles = Array.from(root.querySelectorAll(selectors))"
-    ".filter(e => !e.closest('header, nav, footer, .navbar') && e.offsetParent !== null);"
+    "const root = document.querySelector('.modal.show, .modal.in, .modal[style*=\"display: block\"], .card, form, main, .container') || document.body;"
+    "const selectors = 'select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"], [role=\"combobox\"], .form-control, .form-select, input, ng-select, mat-select';"
+    "let toggles = Array.from(root.querySelectorAll(selectors)).filter(e => e.offsetParent !== null);"
+    "if (toggles.length === 0) {"
+    "   toggles = Array.from(root.querySelectorAll('button, a, input, [role=\"button\"]')).filter(e => e.offsetParent !== null);"
+    "}"
     "toggles.forEach((e, i) => e.setAttribute('data-bot-dd', String(i)));"
-    "return toggles.map((e, i) => ({ idx: i, tag: e.tagName, text: ((e.innerText || e.value || e.placeholder || '') + '').trim().slice(0, 60) }));"
+    "return toggles.map((e, i) => ({ idx: i, tag: e.tagName, class: e.className, text: ((e.innerText || e.value || e.placeholder || '') + '').trim().slice(0, 60) }));"
     "}"
 )
 
@@ -124,8 +125,8 @@ async def tag_dropdowns(page):
 
 
 async def get_menu_items(page, toggle):
-    container = toggle.locator("xpath=ancestor::*[contains(@class,'dropdown')][1]")
-    items = container.locator(".dropdown-menu a, .dropdown-menu button, .dropdown-menu .dropdown-item, [role='option']")
+    container = toggle.locator("xpath=ancestor::*[contains(@class,'dropdown') or contains(@class,'modal') or contains(@class,'card')][1]")
+    items = container.locator(".dropdown-menu a, .dropdown-menu button, .dropdown-menu .dropdown-item, [role='option'], option, li")
     if await items.count() == 0:
         items = page.locator(".dropdown-menu.show a, .dropdown-menu.show button, .dropdown-menu.show .dropdown-item, [role='option']")
     return items
@@ -189,7 +190,11 @@ async def click_proceed(page):
     proceed_btn = page.locator("button:has-text('Proceed to booking')")
     await proceed_btn.wait_for(state="visible", timeout=15000)
     await proceed_btn.click(force=True)
-    await page.wait_for_timeout(1500)
+    try:
+        await page.wait_for_load_state("networkidle", timeout=5000)
+    except Exception:
+        pass
+    await page.wait_for_timeout(2000)
 
 
 async def refresh_form(page):

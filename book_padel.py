@@ -110,10 +110,10 @@ TAG_DROPDOWNS_JS = (
     "document.querySelectorAll('[data-bot-dd]').forEach(e => e.removeAttribute('data-bot-dd'));"
     "const modal = document.querySelector('.modal.show, .modal.in, .modal[style*=\"display: block\"], [role=\"dialog\"]') || document.querySelector('.modal-body');"
     "if (!modal) return [];"
-    "const selectors = 'select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"], [role=\"combobox\"], .form-control, .form-select, input, ng-select, mat-select, .dropdown';"
-    "let toggles = Array.from(modal.querySelectorAll(selectors)).filter(e => e.offsetParent !== null);"
+    "const selectors = 'select, .dropdown-toggle, [data-toggle=\"dropdown\"], [data-bs-toggle=\"dropdown\"], [role=\"combobox\"], .form-control, .form-select, input[type=\"text\"], ng-select, mat-select, .dropdown';"
+    "let toggles = Array.from(modal.querySelectorAll(selectors)).filter(e => e.offsetParent !== null && !e.classList.contains('btn-close') && e.innerText !== 'Back' && e.innerText !== 'Proceed to booking');"
     "if (toggles.length === 0) {"
-    "   toggles = Array.from(modal.querySelectorAll('button, a, input, [role=\"button\"]')).filter(e => e.offsetParent !== null);"
+    "   toggles = Array.from(modal.querySelectorAll('select, input, .form-control, div[class*=\"select\"], div[class*=\"dropdown\"]')).filter(e => e.offsetParent !== null);"
     "}"
     "toggles.forEach((e, i) => e.setAttribute('data-bot-dd', String(i)));"
     "return toggles.map((e, i) => ({ idx: i, tag: e.tagName, class: e.className, text: ((e.innerText || e.value || e.placeholder || '') + '').trim().slice(0, 60) }));"
@@ -195,7 +195,7 @@ async def click_proceed(page):
         await page.wait_for_load_state("networkidle", timeout=5000)
     except Exception:
         pass
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(4000)  # Generous buffer for async form rendering
 
 
 async def refresh_form(page):
@@ -268,7 +268,7 @@ async def book_court_target(p):
 
         # Give the page a moment to render the dropdowns after clicking proceed
         print("[STEP 5] Waiting for dropdowns to load...", flush=True)
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
 
         dds = await tag_dropdowns(page)
         print(f"[STEP 5] Dropdowns found in booking form: {dds}", flush=True)

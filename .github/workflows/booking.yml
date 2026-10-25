@@ -3,7 +3,7 @@ name: Book Court
 on:
   workflow_dispatch:
   schedule:
-    - cron: '55 19 * * *' # Runs nightly before midnight GST
+    - cron: '30 19 * * *' # 19:30 UTC = 11:30 PM Dubai Time (GST)
 
 jobs:
   book-court:

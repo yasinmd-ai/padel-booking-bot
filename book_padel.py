@@ -167,4 +167,45 @@ async def choose_option(page, idx, kind, wanted_text):
     return False
 
 
-async def find
+async def find_date_dropdown(page):
+    """Date dropdown = first dropdown (inside the popup) whose options contain no clock times."""
+    for d in await tag_dropdowns(page):
+        kind, texts = await read_options(page, d["idx"])
+        if texts and not any(re.search(ANY_TIME_PATTERN, t, re.I) for t in texts):
+            return d["idx"], kind, texts
+    return None, None, []
+
+
+async def find_time_dropdown(page):
+    for d in await tag_dropdowns(page):
+        kind, texts = await read_options(page, d["idx"])
+        if any(re.search(ANY_TIME_PATTERN, t, re.I) for t in texts):
+            return d["idx"], kind, texts
+    return None, None, []
+
+
+async def click_proceed(page):
+    proceed_btn = page.locator("button:has-text('Proceed to booking')")
+    await proceed_btn.wait_for(state="visible", timeout=15000)
+    await proceed_btn.click(force=True)
+    await page.wait_for_timeout(1500)
+
+
+async def refresh_form(page):
+    """Go Back then Proceed again so the server re-sends the date list."""
+    try:
+        await page.locator("button:has-text('Back')").first.click(timeout=3000)
+        await page.wait_for_timeout(500)
+        await click_proceed(page)
+    except Exception as e:
+        print(f"[POLL] refresh_form failed: {e}", flush=True)
+
+
+# ------------------------------------------------------------------ main flow
+async def book_court_target(p):
+    browser = await p.chromium.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    context = await browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
